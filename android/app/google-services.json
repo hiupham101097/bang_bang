@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "732907869128",
+    "project_id": "bangbang-76e28",
+    "storage_bucket": "bangbang-76e28.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:732907869128:android:db3a7d7e9a0cf5d6ac66fd",
+        "android_client_info": {
+          "package_name": "com.bangbang.game"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC6TfkpSDl5uu7G9hIJxfJ3nqiozfFWeuM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
