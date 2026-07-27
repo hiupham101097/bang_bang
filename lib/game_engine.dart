@@ -1,6 +1,6 @@
 import 'dart:math';
 
-enum PlayerRole { sheriff, guardian, raider, traitor }
+enum PlayerRole { sheriff, deputy, outlaw, renegade }
 
 enum CardType {
   bang,
@@ -73,17 +73,21 @@ class GameEngine {
   GameEngine._(this.players, this._random) {
     _buildDeck();
   }
-  factory GameEngine.offline({int? seed}) {
+  factory GameEngine.offline({int? seed, int playerCount = 4}) {
     final random = Random(seed);
-    final roles = [
-      PlayerRole.sheriff,
-      PlayerRole.guardian,
-      PlayerRole.raider,
-      PlayerRole.traitor,
-    ]..shuffle(random);
-    final names = ['Lucky Joe', 'Iron Rose', 'Quick Jack', 'Doctor Lee'];
+    final roles = buildRoles(playerCount)..shuffle(random);
+    final names = [
+      'Lucky Joe',
+      'Iron Rose',
+      'Quick Jack',
+      'Doctor Lee',
+      'Silent Bill',
+      'Ruby Jane',
+      'Dusty Pete',
+      'Belle Starr',
+    ];
     final players = List.generate(
-      4,
+      playerCount,
       (i) => GamePlayer(
         id: 'p$i',
         name: names[i],
@@ -98,6 +102,34 @@ class GameEngine {
     }
     engine.phase = GamePhase.action;
     return engine;
+  }
+
+  static List<PlayerRole> buildRoles(int playerCount) {
+    if (playerCount < 4 || playerCount > 8) {
+      throw ArgumentError('Phong chi ho tro tu 4 den 8 nguoi.');
+    }
+
+    if (playerCount == 4) {
+      return [
+        PlayerRole.sheriff,
+        PlayerRole.deputy,
+        PlayerRole.outlaw,
+        PlayerRole.outlaw,
+      ];
+    }
+
+    const renegadeCount = 1;
+    final mainFactionPlayers = playerCount - renegadeCount;
+    final policeCount = mainFactionPlayers ~/ 2;
+    final deputyCount = policeCount - 1;
+    final outlawCount = mainFactionPlayers - policeCount;
+
+    return [
+      PlayerRole.sheriff,
+      ...List<PlayerRole>.filled(deputyCount, PlayerRole.deputy),
+      ...List<PlayerRole>.filled(outlawCount, PlayerRole.outlaw),
+      PlayerRole.renegade,
+    ];
   }
   final Random _random;
   final List<GamePlayer> players;
