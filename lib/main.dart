@@ -51,10 +51,10 @@ class BangBangApp extends StatelessWidget {
       appBarTheme: const AppBarTheme(
         backgroundColor: Color(0xff160c08),
         foregroundColor: Colors.white,
-        toolbarHeight: 36,
+        toolbarHeight: 28,
         titleTextStyle: TextStyle(
           color: Colors.white,
-          fontSize: 15,
+          fontSize: 12,
           fontWeight: FontWeight.w800,
         ),
         elevation: 0,

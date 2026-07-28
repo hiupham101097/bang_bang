@@ -103,7 +103,7 @@ class OnlineRoom {
       isHost(uid) &&
       status == RoomStatus.waiting &&
       totalCount >= 4 &&
-      humanCount >= 2 &&
+      humanCount >= 1 &&
       members
           .where((member) => !member.isBot)
           .every((member) => member.isReady && member.isOnline);

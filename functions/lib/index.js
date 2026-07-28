@@ -91,13 +91,14 @@ exports.createRoom = (0, https_1.onCall)(async (request) => {
     const owner = uid(request);
     const data = request.data;
     const maxPlayers = Number(data.maxPlayers ?? 8);
-    const name = String(data.roomName ?? '').trim();
-    if (!Number.isInteger(maxPlayers) || maxPlayers < 4 || maxPlayers > 8 || name.length < 2 || name.length > 24)
+    if (!Number.isInteger(maxPlayers) || maxPlayers < 4 || maxPlayers > 8)
         throw new https_1.HttpsError('invalid-argument', 'Cấu hình phòng không hợp lệ.');
     const ref = rooms.doc();
+    const roomCode = code();
+    const name = `Bàn ${roomCode}`;
     const profile = await db.doc(`users/${owner}`).get();
     const displayName = profile.get('displayName') ?? `Cao bồi ${owner.slice(0, 5)}`;
-    await db.runTransaction(async (tx) => { tx.set(ref, { roomCode: code(), roomName: name, hostUid: owner, status: 'waiting', phase: 'lobby', isPublic: data.isPublic !== false, minPlayers: 4, maxPlayers, humanPlayerCount: 1, botPlayerCount: 0, totalPlayerCount: 1, allowBots: data.allowBots !== false, turnDurationSeconds: Number(data.turnDurationSeconds ?? 45), responseDurationSeconds: 8, voiceEnabled: data.voiceEnabled !== false, chatEnabled: data.chatEnabled !== false, createdAt: now(), updatedAt: now() }); tx.set(ref.collection('players').doc(owner), member(owner, displayName, 0, true)); tx.set(db.doc(`users/${owner}`), { currentRoomId: ref.id, updatedAt: now() }, { merge: true }); });
+    await db.runTransaction(async (tx) => { tx.set(ref, { roomCode, roomName: name, hostUid: owner, status: 'waiting', phase: 'lobby', isPublic: data.isPublic !== false, minPlayers: 4, maxPlayers, humanPlayerCount: 1, botPlayerCount: 0, totalPlayerCount: 1, allowBots: data.allowBots !== false, turnDurationSeconds: Number(data.turnDurationSeconds ?? 45), responseDurationSeconds: 8, voiceEnabled: data.voiceEnabled !== false, chatEnabled: data.chatEnabled !== false, createdAt: now(), updatedAt: now() }); tx.set(ref.collection('players').doc(owner), member(owner, displayName, 0, true)); tx.set(db.doc(`users/${owner}`), { currentRoomId: ref.id, updatedAt: now() }, { merge: true }); });
     return { roomId: ref.id };
 });
 exports.joinRoom = (0, https_1.onCall)(async (request) => {
@@ -129,5 +130,5 @@ exports.removeBot = (0, https_1.onCall)(async (request) => { const owner = uid(r
     throw new https_1.HttpsError('permission-denied', 'Không thể xóa bot.'); tx.delete(bot.ref); tx.update(ref, { botPlayerCount: admin.firestore.FieldValue.increment(-1), totalPlayerCount: admin.firestore.FieldValue.increment(-1), updatedAt: now() }); }); return {}; });
 exports.leaveRoom = (0, https_1.onCall)(async (request) => { const player = uid(request); const id = roomId(request.data); const ref = rooms.doc(id); await db.runTransaction(async (tx) => { const room = await tx.get(ref); const mine = await tx.get(ref.collection('players').doc(player)); if (!room.exists || !mine.exists)
     return; tx.delete(mine.ref); tx.update(ref, { humanPlayerCount: admin.firestore.FieldValue.increment(-1), totalPlayerCount: admin.firestore.FieldValue.increment(-1), updatedAt: now() }); tx.set(db.doc(`users/${player}`), { currentRoomId: admin.firestore.FieldValue.delete(), updatedAt: now() }, { merge: true }); }); return {}; });
-exports.startGame = (0, https_1.onCall)(async (request) => { const owner = uid(request); const id = roomId(request.data); const ref = rooms.doc(id); await db.runTransaction(async (tx) => { const room = await tx.get(ref); const players = await tx.get(ref.collection('players')); const humans = players.docs.filter(d => d.get('playerType') === 'human'); if (!room.exists || room.get('hostUid') !== owner || room.get('status') !== 'waiting' || players.size < 4 || humans.length < 2 || humans.some(d => !d.get('isReady') || d.get('connectionState') !== 'online'))
-    throw new https_1.HttpsError('failed-precondition', 'Chưa đủ điều kiện bắt đầu.'); tx.update(ref, { status: 'starting', phase: 'assigning_roles', startedAt: now(), updatedAt: now() }); }); return { roomId: id }; });
+exports.startGame = (0, https_1.onCall)(async (request) => { const owner = uid(request); const id = roomId(request.data); const ref = rooms.doc(id); await db.runTransaction(async (tx) => { const room = await tx.get(ref); const players = await tx.get(ref.collection('players')); const humans = players.docs.filter(d => d.get('playerType') === 'human'); if (!room.exists || room.get('hostUid') !== owner || room.get('status') !== 'waiting' || players.size < 4 || humans.length < 1 || humans.some(d => !d.get('isReady') || d.get('connectionState') !== 'online'))
+    throw new https_1.HttpsError('failed-precondition', 'Cần đủ 4 người chơi, chỉ cần 1 người thật sẵn sàng để test.'); tx.update(ref, { status: 'starting', phase: 'assigning_roles', startedAt: now(), updatedAt: now() }); }); return { roomId: id }; });
