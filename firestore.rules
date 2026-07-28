@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} { allow read: if request.auth != null && request.auth.uid == uid; allow create: if request.auth != null && request.auth.uid == uid; allow update: if request.auth != null && request.auth.uid == uid && request.resource.data.coins == resource.data.coins; }
+    match /rooms/{roomId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+      match /players/{playerId} { allow read: if request.auth != null; allow write: if false; }
+      match /privateStates/{playerId} { allow read: if request.auth != null && request.auth.uid == playerId; allow write: if false; }
+      match /serverState/{document} { allow read, write: if false; }
+      match /actions/{actionId} { allow read, write: if false; }
+      // Pending actions contain only public choices/targets, never private hands.
+      match /pendingActions/{actionId} { allow read: if request.auth != null; allow write: if false; }
+    }
+    match /systemStats/{id} { allow read: if request.auth != null; allow write: if false; }
+  }
+}

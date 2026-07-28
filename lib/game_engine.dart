@@ -17,13 +17,60 @@ enum CardType {
   bounty,
 }
 
+/// Rank of a standard 52-card deck. Artwork is shared between cards; the UI
+/// draws this data on top of the existing image.
+enum CardRank {
+  ace,
+  two,
+  three,
+  four,
+  five,
+  six,
+  seven,
+  eight,
+  nine,
+  ten,
+  jack,
+  queen,
+  king,
+}
+
+/// Suit of a standard 52-card deck.
+enum CardSuit { spade, club, diamond, heart }
+
 enum GamePhase { drawing, action, gameOver }
 
 enum RoundEvent { none, sandstorm, rushHour, gunBan, raid, goldVault, mayhem }
 
 class GameCard {
-  const GameCard(this.type);
+  GameCard(
+    this.type, {
+    this.id = '',
+    this.rank = CardRank.ace,
+    this.suit = CardSuit.spade,
+    String? imageAsset,
+  }) : imageAsset = imageAsset ?? assetForType(type);
+
+  final String id;
   final CardType type;
+  final CardRank rank;
+  final CardSuit suit;
+  final String imageAsset;
+
+  static String assetForType(CardType type) => switch (type) {
+    CardType.bang => 'assets/images/cards/bang.png',
+    CardType.dodge => 'assets/images/cards/ne.png',
+    CardType.heal => 'assets/images/cards/beer.png',
+    CardType.doubleBang => 'assets/images/cards/gatling.png',
+    CardType.scope => 'assets/images/cards/gun_range_2.png',
+    CardType.horse => 'assets/images/cards/mustang.png',
+    CardType.steal => 'assets/images/cards/panico.png',
+    CardType.destroy => 'assets/images/cards/cat_balou.png',
+    CardType.smoke => 'assets/images/cards/barrel.png',
+    CardType.duel => 'assets/images/cards/duello.png',
+    CardType.explosion => 'assets/images/cards/dynamite.png',
+    CardType.bounty => 'assets/images/cards/jail.png',
+  };
   String get name => switch (type) {
     CardType.bang => 'BANG!',
     CardType.dodge => 'NÉ',
@@ -131,6 +178,7 @@ class GameEngine {
       PlayerRole.renegade,
     ];
   }
+
   final Random _random;
   final List<GamePlayer> players;
   final List<GameCard> deck = [], discard = [];
@@ -155,9 +203,24 @@ class GameEngine {
 
   void _buildDeck() {
     const types = CardType.values;
+    final standardDeck = [
+      for (final suit in CardSuit.values)
+        for (final rank in CardRank.values) (rank: rank, suit: suit),
+    ];
+    var cardIndex = 0;
     for (final t in types) {
-      for (var i = 0; i < (t == CardType.bang ? 12 : 4); i++)
-        deck.add(GameCard(t));
+      for (var i = 0; i < (t == CardType.bang ? 12 : 4); i++) {
+        final marker = standardDeck[cardIndex % standardDeck.length];
+        deck.add(
+          GameCard(
+            t,
+            id: '${t.name}_${marker.rank.name}_${marker.suit.name}_$i',
+            rank: marker.rank,
+            suit: marker.suit,
+          ),
+        );
+        cardIndex++;
+      }
     }
     deck.shuffle(_random);
   }
@@ -191,8 +254,9 @@ class GameEngine {
     if (isOver ||
         currentPlayer != human ||
         index < 0 ||
-        index >= human.hand.length)
+        index >= human.hand.length) {
       return;
+    }
     final card = human.hand[index];
     if (card.needsTarget && (target == null || !canTarget(human, target))) {
       log = 'Mục tiêu nằm ngoài tầm bắn hoặc không hợp lệ.';
@@ -354,8 +418,9 @@ class GameEngine {
   }
 
   void _discardLimit(GamePlayer p) {
-    while (p.hand.length > p.health)
+    while (p.hand.length > p.health) {
       discard.add(p.hand.removeAt(_random.nextInt(p.hand.length)));
+    }
   }
 
   void _rollEvent() {
@@ -365,36 +430,48 @@ class GameEngine {
     if (event == RoundEvent.goldVault) {
       final living = players.where((p) => p.alive).toList()
         ..sort((a, b) => a.health.compareTo(b.health));
-      if (living.isNotEmpty)
+      if (living.isNotEmpty) {
         living.first.health = min(
           living.first.maxHealth,
           living.first.health + 1,
         );
+      }
     }
     if (event == RoundEvent.raid) {
       final living = players.where((p) => p.alive).toList()
         ..sort((a, b) => b.hand.length.compareTo(a.hand.length));
-      if (living.isNotEmpty)
-        for (var i = 0; i < 2 && living.first.hand.isNotEmpty; i++)
+      if (living.isNotEmpty) {
+        for (var i = 0; i < 2 && living.first.hand.isNotEmpty; i++) {
           discard.add(living.first.hand.removeLast());
+        }
+      }
     }
   }
 
-  void _checkWinner() {
+  String? evaluateWinner() {
     final sheriff = players.firstWhere((p) => p.role == PlayerRole.sheriff);
-    final raiders = players
-        .where((p) => p.alive && p.role == PlayerRole.raider)
+    final outlaws = players
+        .where((p) => p.alive && p.role == PlayerRole.outlaw)
         .toList();
-    final traitors = players
-        .where((p) => p.alive && p.role == PlayerRole.traitor)
+    final renegades = players
+        .where((p) => p.alive && p.role == PlayerRole.renegade)
         .toList();
     final living = players.where((p) => p.alive).toList();
-    if (!sheriff.alive)
-      winner = raiders.isNotEmpty ? 'Phe Kẻ cướp' : 'Kẻ phản bội';
-    else if (raiders.isEmpty && traitors.isEmpty)
-      winner = 'Cảnh trưởng và Vệ sĩ';
-    else if (living.length == 1 && living.single.role == PlayerRole.traitor)
-      winner = 'Kẻ phản bội';
+
+    if (living.length == 1 && living.single.role == PlayerRole.renegade) {
+      return 'Kẻ phản bội';
+    }
+    if (!sheriff.alive && outlaws.isNotEmpty) {
+      return 'Phe Kẻ cướp';
+    }
+    if (sheriff.alive && outlaws.isEmpty && renegades.isEmpty) {
+      return 'Phe Cảnh sát';
+    }
+    return null;
+  }
+
+  void _checkWinner() {
+    winner = evaluateWinner();
     if (winner != null) {
       phase = GamePhase.gameOver;
       log = 'KẾT THÚC VÁN: $winner chiến thắng!';

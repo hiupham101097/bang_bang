@@ -1,6 +1,13 @@
 import 'package:bangbang/game_engine.dart';
 import 'package:bangbang/audio_service.dart';
+import 'package:bangbang/game_card_widget.dart';
+import 'package:bangbang/data/online_room_repository.dart';
+import 'package:bangbang/online_lobby.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -8,6 +15,12 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
     await Firebase.initializeApp();
+    if (const bool.fromEnvironment('USE_FIREBASE_EMULATORS')) {
+      final host = kIsWeb ? 'localhost' : '10.0.2.2';
+      await FirebaseAuth.instance.useAuthEmulator(host, 9099);
+      FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
+      FirebaseFunctions.instance.useFunctionsEmulator(host, 5001);
+    }
   } catch (_) {
     // The offline game works while Firebase is not configured for every platform.
   }
@@ -20,16 +33,18 @@ void main() async {
 
 class BangBangApp extends StatelessWidget {
   const BangBangApp({super.key});
+  static final OnlineRoomRepository _rooms = HybridOnlineRoomRepository();
   @override
   Widget build(BuildContext context) => MaterialApp(
     debugShowCheckedModeBanner: false,
     theme: ThemeData(useMaterial3: true),
-    home: const HomeScreen(),
+    home: HomeScreen(repository: _rooms),
   );
 }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, required this.repository});
+  final OnlineRoomRepository repository;
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -109,7 +124,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     Icons.play_arrow_rounded,
                     () => Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const GameTable()),
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            OnlineLobbyScreen(repository: widget.repository),
+                      ),
                     ),
                   ),
                   _menu(
@@ -142,17 +160,32 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   _menu('THOÁT', Icons.power_settings_new, SystemNavigator.pop),
                   const SizedBox(height: 10),
-                  IconButton(
-                    onPressed: () async {
-                      await GameAudio.instance.toggle();
-                      if (mounted) setState(() {});
-                    },
-                    icon: Icon(
-                      GameAudio.instance.enabled
-                          ? Icons.volume_up
-                          : Icons.volume_off,
-                      color: Colors.white,
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'Kiểm tra thẻ bài',
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const CardPreviewScreen(),
+                          ),
+                        ),
+                        icon: const Icon(Icons.style, color: Colors.white),
+                      ),
+                      IconButton(
+                        onPressed: () async {
+                          await GameAudio.instance.toggle();
+                          if (mounted) setState(() {});
+                        },
+                        icon: Icon(
+                          GameAudio.instance.enabled
+                              ? Icons.volume_up
+                              : Icons.volume_off,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -198,8 +231,9 @@ class _GameTableState extends State<GameTable> {
   int selected = 0;
   bool sound = true, revealRoles = false;
   void _click({bool attack = false}) {
-    if (sound)
+    if (sound) {
       SystemSound.play(attack ? SystemSoundType.alert : SystemSoundType.click);
+    }
   }
 
   void _play(GamePlayer p) {
@@ -415,10 +449,22 @@ class _GameTableState extends State<GameTable> {
                 ),
               ],
             ),
-            Row(children: [
-              Image.asset('assets/images/health_bullet.png', width: 15, height: 15),
-              Text(' ${p.health}/${p.maxHealth}  🂠 ${p.hand.length}  ↔ ${p.alive ? game.distance(game.human, p) : '-'}', style: const TextStyle(color: Color(0xffffd2cb), fontSize: 12)),
-            ]),
+            Row(
+              children: [
+                Image.asset(
+                  'assets/images/health_bullet.png',
+                  width: 15,
+                  height: 15,
+                ),
+                Text(
+                  ' ${p.health}/${p.maxHealth}  🂠 ${p.hand.length}  ↔ ${p.alive ? game.distance(game.human, p) : '-'}',
+                  style: const TextStyle(
+                    color: Color(0xffffd2cb),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
             if (p.equipment.isNotEmpty)
               Text(
                 p.equipment.map((e) => GameCard(e).name).join(', '),
@@ -444,9 +490,9 @@ class _GameTableState extends State<GameTable> {
   };
   String _role(PlayerRole r) => switch (r) {
     PlayerRole.sheriff => 'CẢNH TRƯỞNG',
-    PlayerRole.guardian => 'VỆ SĨ',
-    PlayerRole.raider => 'KẺ CƯỚP',
-    PlayerRole.traitor => 'KẺ PHẢN BỘI',
+    PlayerRole.deputy => 'CẢNH SÁT PHÓ',
+    PlayerRole.outlaw => 'KẺ CƯỚP',
+    PlayerRole.renegade => 'KẺ PHẢN BỘI',
   };
   Widget _hand(BoxConstraints c) => Container(
     color: const Color(0xff160b08).withValues(alpha: .94),
@@ -489,31 +535,7 @@ class _GameTableState extends State<GameTable> {
     duration: const Duration(milliseconds: 120),
     width: 87,
     margin: EdgeInsets.only(top: active ? 0 : 10, bottom: active ? 8 : 0),
-    decoration: BoxDecoration(
-      color: c.type == CardType.bang
-          ? const Color(0xffbd332c)
-          : const Color(0xfff5dfaa),
-      borderRadius: BorderRadius.circular(9),
-      border: Border.all(
-        color: active ? const Color(0xffffd452) : Colors.white,
-        width: active ? 3 : 1,
-      ),
-    ),
-    alignment: Alignment.center,
-    child: Padding(
-      padding: const EdgeInsets.all(5),
-      child: Text(
-        c.name,
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          color: c.type == CardType.bang
-              ? Colors.white
-              : const Color(0xff422212),
-          fontWeight: FontWeight.w900,
-          fontSize: 13,
-        ),
-      ),
-    ),
+    child: GameCardWidget(card: c, width: 87, isSelected: active),
   );
   Widget _victory() => Positioned.fill(
     child: ColoredBox(
