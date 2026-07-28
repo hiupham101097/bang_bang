@@ -77,9 +77,45 @@ class GameSetupScreen extends StatelessWidget {
                     'CẢNH SÁT TRƯỞNG ĐÃ ĐƯỢC CÔNG KHAI',
                     style: TextStyle(color: Color(0xffffd366)),
                   ),
+                if (state?.role != null) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    width: 240,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xfff4dfac),
+                      border: Border.all(
+                        color: const Color(0xffffc451),
+                        width: 2,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      children: [
+                        const Text(
+                          'VAI TRÒ CỦA BẠN',
+                          style: TextStyle(
+                            color: Color(0xff4d2410),
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _roleLabel(state!.role!),
+                          style: const TextStyle(
+                            color: Color(0xff2b160b),
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 if (choosing && state != null && !state.submitted) ...[
+                  const SizedBox(height: 20),
                   const Text(
-                    'CHỌN NHÂN VẬT',
+                    'CHỌN 1 TRONG 2 THẺ NHÂN VẬT',
                     style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 14),
@@ -123,5 +159,13 @@ class GameSetupScreen extends StatelessWidget {
     'dealing_initial_cards' => 'Đang trộn và chia bài...',
     'turn_start' => 'Sẵn sàng vào bàn đấu.',
     _ => 'Đang xác nhận người chơi...',
+  };
+
+  String _roleLabel(String role) => switch (role) {
+    'sheriff' => 'CẢNH SÁT TRƯỞNG',
+    'deputy' => 'CẢNH SÁT PHÓ',
+    'outlaw' => 'KẺ CƯỚP',
+    'renegade' => 'KẺ PHẢN BỘI',
+    _ => 'VAI TRÒ BÍ MẬT',
   };
 }

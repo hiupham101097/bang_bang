@@ -480,11 +480,15 @@ class _GameTableState extends State<GameTable> {
                   width: 15,
                   height: 15,
                 ),
-                Text(
-                  ' ${p.health}/${p.maxHealth}  🂠 ${p.hand.length}  ↔ ${p.alive ? game.distance(game.human, p) : '-'}',
-                  style: const TextStyle(
-                    color: Color(0xffffd2cb),
-                    fontSize: 12,
+                Expanded(
+                  child: Text(
+                    ' ${p.health}/${p.maxHealth}  🂠 ${p.hand.length}  ↔ ${p.alive ? game.distance(game.human, p) : '-'}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xffffd2cb),
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ],

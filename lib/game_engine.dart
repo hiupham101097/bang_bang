@@ -461,7 +461,7 @@ class GameEngine {
     if (living.length == 1 && living.single.role == PlayerRole.renegade) {
       return 'Kẻ phản bội';
     }
-    if (!sheriff.alive && outlaws.isNotEmpty) {
+    if (!sheriff.alive) {
       return 'Phe Kẻ cướp';
     }
     if (sheriff.alive && outlaws.isEmpty && renegades.isEmpty) {

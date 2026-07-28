@@ -19,6 +19,12 @@ class RoomMember {
     this.isReady = false,
     this.isOnline = true,
     this.difficulty = 'normal',
+    this.health = 0,
+    this.maxHealth = 0,
+    this.cardCount = 0,
+    this.isAlive = true,
+    this.characterId,
+    this.equipment = const [],
   });
 
   final String id;
@@ -29,6 +35,12 @@ class RoomMember {
   final bool isReady;
   final bool isOnline;
   final String difficulty;
+  final int health;
+  final int maxHealth;
+  final int cardCount;
+  final bool isAlive;
+  final String? characterId;
+  final List<String> equipment;
 
   bool get isBot => type == MemberType.bot;
 
@@ -41,6 +53,12 @@ class RoomMember {
     isReady: isReady ?? this.isReady,
     isOnline: isOnline ?? this.isOnline,
     difficulty: difficulty,
+    health: health,
+    maxHealth: maxHealth,
+    cardCount: cardCount,
+    isAlive: isAlive,
+    characterId: characterId,
+    equipment: equipment,
   );
 }
 
@@ -77,6 +95,14 @@ class OnlineRoom {
     this.phase = 'lobby',
     this.sheriffPlayerId,
     this.winner,
+    this.currentTurnPlayerId,
+    this.turnDeadlineAt,
+    this.turnNumber = 0,
+    this.judgmentsResolvedForTurn = 0,
+    this.hasDrawnThisTurn = false,
+    this.cardsPlayedThisTurn = 0,
+    this.publicLog = const [],
+    this.discardTopCardId,
   });
 
   final String id;
@@ -88,6 +114,14 @@ class OnlineRoom {
   final String phase;
   final String? sheriffPlayerId;
   final String? winner;
+  final String? currentTurnPlayerId;
+  final DateTime? turnDeadlineAt;
+  final int turnNumber;
+  final int judgmentsResolvedForTurn;
+  final bool hasDrawnThisTurn;
+  final int cardsPlayedThisTurn;
+  final List<String> publicLog;
+  final String? discardTopCardId;
 
   int get humanCount => members.where((member) => !member.isBot).length;
   int get botCount => members.where((member) => member.isBot).length;
@@ -114,6 +148,14 @@ class OnlineRoom {
     String? phase,
     String? sheriffPlayerId,
     String? winner,
+    String? currentTurnPlayerId,
+    DateTime? turnDeadlineAt,
+    int? turnNumber,
+    int? judgmentsResolvedForTurn,
+    bool? hasDrawnThisTurn,
+    int? cardsPlayedThisTurn,
+    List<String>? publicLog,
+    String? discardTopCardId,
   }) => OnlineRoom(
     id: id,
     code: code,
@@ -124,6 +166,15 @@ class OnlineRoom {
     phase: phase ?? this.phase,
     sheriffPlayerId: sheriffPlayerId ?? this.sheriffPlayerId,
     winner: winner ?? this.winner,
+    currentTurnPlayerId: currentTurnPlayerId ?? this.currentTurnPlayerId,
+    turnDeadlineAt: turnDeadlineAt ?? this.turnDeadlineAt,
+    turnNumber: turnNumber ?? this.turnNumber,
+    judgmentsResolvedForTurn:
+        judgmentsResolvedForTurn ?? this.judgmentsResolvedForTurn,
+    hasDrawnThisTurn: hasDrawnThisTurn ?? this.hasDrawnThisTurn,
+    cardsPlayedThisTurn: cardsPlayedThisTurn ?? this.cardsPlayedThisTurn,
+    publicLog: publicLog ?? this.publicLog,
+    discardTopCardId: discardTopCardId ?? this.discardTopCardId,
   );
 }
 

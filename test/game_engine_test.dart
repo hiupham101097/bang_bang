@@ -45,5 +45,26 @@ void main() {
       expect(game.currentPlayer, game.human);
       expect(game.human.hand.length, greaterThanOrEqualTo(before));
     });
+
+    test('outlaws win when the sheriff is eliminated with survivors left', () {
+      final game = GameEngine.offline(seed: 4, playerCount: 5);
+      final sheriff = game.players.firstWhere(
+        (player) => player.role == PlayerRole.sheriff,
+      );
+      final outlaw = game.players.firstWhere(
+        (player) => player.role == PlayerRole.outlaw,
+      );
+      final otherOutlaw = game.players
+          .where(
+            (player) => player.role == PlayerRole.outlaw && player != outlaw,
+          )
+          .single;
+
+      sheriff.alive = false;
+      outlaw.alive = false;
+      otherOutlaw.alive = false;
+
+      expect(game.evaluateWinner(), 'Phe Kẻ cướp');
+    });
   });
 }

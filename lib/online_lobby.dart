@@ -502,6 +502,11 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
     }
     final isHost = profile != null && current.isHost(profile!.uid);
     final self = profile == null ? null : current.memberFor(profile!.uid);
+    final guestsReady = current.members
+        .where((member) => !member.isBot && !member.isHost)
+        .every((member) => member.isReady && member.isOnline);
+    final canHostStart =
+        guestsReady && (current.totalCount >= 4 || current.settings.allowBots);
     return Scaffold(
       backgroundColor: const Color(0xff160c08),
       appBar: AppBar(
@@ -554,7 +559,7 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
-                      'Test một người: tự thêm bot khi bắt đầu. ${error ?? ''}',
+                      'Chủ phòng bắt đầu trận; khách cần sẵn sàng. ${error ?? ''}',
                       style: const TextStyle(
                         fontSize: 11,
                         color: Colors.white70,
@@ -572,24 +577,25 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                       icon: const Icon(Icons.logout, size: 16),
                       label: const Text('RỜI PHÒNG'),
                     ),
-                    FilledButton.icon(
-                      style: _lobbyButtonStyle,
-                      onPressed: profile == null
-                          ? null
-                          : () => _call(
-                              () => widget.repository.setReady(
-                                current.id,
-                                !(self?.isReady ?? false),
+                    if (!isHost)
+                      FilledButton.icon(
+                        style: _lobbyButtonStyle,
+                        onPressed: profile == null
+                            ? null
+                            : () => _call(
+                                () => widget.repository.setReady(
+                                  current.id,
+                                  !(self?.isReady ?? false),
+                                ),
                               ),
-                            ),
-                      icon: Icon(
-                        self?.isReady == true ? Icons.close : Icons.check,
-                        size: 16,
+                        icon: Icon(
+                          self?.isReady == true ? Icons.close : Icons.check,
+                          size: 16,
+                        ),
+                        label: Text(
+                          self?.isReady == true ? 'HỦY READY' : 'SẴN SÀNG',
+                        ),
                       ),
-                      label: Text(
-                        self?.isReady == true ? 'HỦY READY' : 'SẴN SÀNG',
-                      ),
-                    ),
                     if (isHost) ...[
                       OutlinedButton.icon(
                         style: _lobbyButtonStyle,
@@ -607,7 +613,7 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                       ),
                       FilledButton.icon(
                         style: _lobbyButtonStyle,
-                        onPressed: self?.isReady == true
+                        onPressed: canHostStart
                             ? () => _startTestGame(current)
                             : null,
                         icon: const Icon(Icons.play_arrow, size: 16),
@@ -647,6 +653,8 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                   child: Text(
                     '${member.displayName}${member.isHost ? ' ★' : ''}\n${member.isBot
                         ? 'BOT – ${member.difficulty}'
+                        : member.isHost
+                        ? 'CHỦ PHÒNG'
                         : member.isReady
                         ? 'ĐÃ SẴN SÀNG'
                         : 'CHƯA SẴN SÀNG'}',

@@ -252,6 +252,15 @@ class HybridOnlineRoomRepository implements OnlineRoomRepository {
       phase: data['phase'] as String? ?? 'lobby',
       sheriffPlayerId: data['sheriffPlayerId'] as String?,
       winner: data['winner'] as String?,
+      currentTurnPlayerId: data['currentTurnPlayerId'] as String?,
+      turnDeadlineAt: _asDateTime(data['turnDeadlineAt']),
+      turnNumber: (data['turnNumber'] as num?)?.toInt() ?? 0,
+      judgmentsResolvedForTurn:
+          (data['judgmentsResolvedForTurn'] as num?)?.toInt() ?? 0,
+      hasDrawnThisTurn: data['hasDrawnThisTurn'] as bool? ?? false,
+      cardsPlayedThisTurn: (data['cardsPlayedThisTurn'] as num?)?.toInt() ?? 0,
+      publicLog: List<String>.from(data['publicLog'] as List? ?? const []),
+      discardTopCardId: data['discardTopCardId'] as String?,
       settings: RoomSettings(
         roomName: data['roomName'] as String? ?? 'Phòng chưa đặt tên',
         maxPlayers: (data['maxPlayers'] as num?)?.toInt() ?? 8,
@@ -295,8 +304,31 @@ class HybridOnlineRoomRepository implements OnlineRoomRepository {
       isReady: data['isReady'] as bool? ?? false,
       isOnline: data['connectionState'] != 'offline',
       difficulty: data['difficulty'] as String? ?? 'normal',
+      health: (data['health'] as num?)?.toInt() ?? 0,
+      maxHealth: (data['maxHealth'] as num?)?.toInt() ?? 0,
+      cardCount: (data['cardCount'] as num?)?.toInt() ?? 0,
+      isAlive: data['isAlive'] as bool? ?? true,
+      characterId: data['characterId'] as String?,
+      equipment: [
+        for (final key in const [
+          'weaponCardId',
+          'barrelCardId',
+          'mustangCardId',
+          'appaloosaCardId',
+          'dynamiteCardId',
+          'jailCardId',
+        ])
+          if (data[key] is String) data[key] as String,
+        ...List<String>.from(data['equipmentCardIds'] as List? ?? const []),
+      ],
     );
   }
+
+  DateTime? _asDateTime(dynamic value) => switch (value) {
+    Timestamp timestamp => timestamp.toDate(),
+    DateTime dateTime => dateTime,
+    _ => null,
+  };
 
   RoomStatus _status(String? value) => switch (value) {
     'starting' => RoomStatus.starting,
@@ -661,12 +693,7 @@ class LocalOnlineRoomRepository implements OnlineRoomRepository {
 
   @override
   Future<void> startGame(String roomId) async {
-    final profile = await ensureSignedIn();
-    final room = _find(roomId);
-    if (room == null || !room.canStart(profile.uid)) {
-      throw StateError('Chưa đủ điều kiện bắt đầu.');
-    }
-    _save(room.copyWith(status: RoomStatus.starting));
+    throw StateError('Không thể kết nối Firebase để bắt đầu trận online.');
   }
 
   @override
