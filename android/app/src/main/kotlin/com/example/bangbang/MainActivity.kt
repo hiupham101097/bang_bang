@@ -8,6 +8,8 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private val channel = "bangbang/audio"
     private var music: MediaPlayer? = null
+    private var intro: MediaPlayer? = null
+    private var sfx: MediaPlayer? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -26,9 +28,30 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "stop" -> { music?.pause(); result.success(null) }
+                "splash" -> {
+                    intro?.release()
+                    intro = MediaPlayer.create(applicationContext, R.raw.splash_intro).apply {
+                        setVolume(.65f, .65f)
+                        setOnCompletionListener { it.release(); intro = null }
+                        start()
+                    }
+                    result.success(null)
+                }
+                "sfx" -> {
+                    val name = call.argument<String>("name")
+                    val resourceId = resources.getIdentifier(name, "raw", packageName)
+                    if (resourceId == 0) { result.error("missing_sfx", "Unknown sound", name); return@setMethodCallHandler }
+                    sfx?.release()
+                    sfx = MediaPlayer.create(applicationContext, resourceId).apply {
+                        setVolume(.55f, .55f)
+                        setOnCompletionListener { it.release(); sfx = null }
+                        start()
+                    }
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }
     }
-    override fun onDestroy() { music?.release(); music = null; super.onDestroy() }
+    override fun onDestroy() { music?.release(); intro?.release(); sfx?.release(); music = null; intro = null; sfx = null; super.onDestroy() }
 }

@@ -12,8 +12,9 @@ class PresenceService {
 
   DatabaseReference get _status {
     final uid = _auth.currentUser?.uid;
-    if (uid == null)
+    if (uid == null) {
       throw StateError('Cần đăng nhập trước khi cập nhật presence.');
+    }
     return _database.ref('status/$uid');
   }
 

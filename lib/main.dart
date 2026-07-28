@@ -3,6 +3,7 @@ import 'package:bangbang/audio_service.dart';
 import 'package:bangbang/game_card_widget.dart';
 import 'package:bangbang/data/online_room_repository.dart';
 import 'package:bangbang/online_lobby.dart';
+import 'package:bangbang/splash_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -37,8 +38,30 @@ class BangBangApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
     debugShowCheckedModeBanner: false,
-    theme: ThemeData(useMaterial3: true),
-    home: HomeScreen(repository: _rooms),
+    theme: ThemeData(
+      useMaterial3: true,
+      scaffoldBackgroundColor: const Color(0xff160c08),
+      colorScheme: const ColorScheme.dark(
+        surface: Color(0xff160c08),
+        onSurface: Colors.white,
+        primary: Color(0xffffc451),
+        onPrimary: Color(0xff160c08),
+      ),
+      textTheme: const TextTheme(bodyMedium: TextStyle(color: Colors.white)),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Color(0xff160c08),
+        foregroundColor: Colors.white,
+        toolbarHeight: 36,
+        titleTextStyle: TextStyle(
+          color: Colors.white,
+          fontSize: 15,
+          fontWeight: FontWeight.w800,
+        ),
+        elevation: 0,
+        centerTitle: false,
+      ),
+    ),
+    home: SplashScreen(repository: _rooms),
   );
 }
 
@@ -90,104 +113,105 @@ class _HomeScreenState extends State<HomeScreen> {
           child: ColoredBox(color: Colors.black.withValues(alpha: .45)),
         ),
         SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.local_fire_department,
-                    color: Color(0xffffc74f),
-                    size: 52,
-                  ),
-                  const Text(
-                    'BANG BANG',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 42,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 4,
-                    ),
-                  ),
-                  const Text(
-                    'HỖN CHIẾN MIỀN VIỄN TÂY',
-                    style: TextStyle(
-                      color: Color(0xffffd272),
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                  const SizedBox(height: 22),
-                  _menu(
-                    'BẮT ĐẦU',
-                    Icons.play_arrow_rounded,
-                    () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            OnlineLobbyScreen(repository: widget.repository),
+          child: SingleChildScrollView(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text(
+                      'BANG BANG',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 34,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 3,
                       ),
                     ),
-                  ),
-                  _menu(
-                    'NHIỆM VỤ',
-                    Icons.emoji_events_outlined,
-                    () => _dialog(
-                      'Nhiệm vụ hôm nay',
-                      const Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('☐ Thắng một ván bất kỳ'),
-                          SizedBox(height: 8),
-                          Text('☐ Dùng BANG! 5 lần'),
-                          SizedBox(height: 8),
-                          Text('☐ Sống sót với 1 máu'),
-                        ],
+                    const Text(
+                      'HỖN CHIẾN MIỀN VIỄN TÂY',
+                      style: TextStyle(
+                        color: Color(0xffffd272),
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
                       ),
                     ),
-                  ),
-                  _menu(
-                    'HƯỚNG DẪN',
-                    Icons.menu_book_outlined,
-                    () => _dialog(
-                      'Hướng dẫn nhanh',
-                      const Text(
-                        'Rút bài → chọn bài → chạm mục tiêu. BANG gây 1 sát thương; NÉ chặn BANG. Kính ngắm tăng tầm, Ngựa khiến đối thủ xa hơn. Cảnh trưởng và Vệ sĩ loại Kẻ cướp/Kẻ phản bội; Kẻ phản bội phải là người cuối cùng.',
+                    const SizedBox(height: 10),
+                    _menu(
+                      'BẮT ĐẦU',
+                      Icons.play_arrow_rounded,
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              OnlineLobbyScreen(repository: widget.repository),
+                        ),
                       ),
                     ),
-                  ),
-                  _menu('THOÁT', Icons.power_settings_new, SystemNavigator.pop),
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        tooltip: 'Kiểm tra thẻ bài',
-                        onPressed: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const CardPreviewScreen(),
+                    _menu(
+                      'NHIỆM VỤ',
+                      Icons.emoji_events_outlined,
+                      () => _dialog(
+                        'Nhiệm vụ hôm nay',
+                        const Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('☐ Thắng một ván bất kỳ'),
+                            SizedBox(height: 8),
+                            Text('☐ Dùng BANG! 5 lần'),
+                            SizedBox(height: 8),
+                            Text('☐ Sống sót với 1 máu'),
+                          ],
+                        ),
+                      ),
+                    ),
+                    _menu(
+                      'HƯỚNG DẪN',
+                      Icons.menu_book_outlined,
+                      () => _dialog(
+                        'Hướng dẫn nhanh',
+                        const Text(
+                          'Rút bài → chọn bài → chạm mục tiêu. BANG gây 1 sát thương; NÉ chặn BANG. Kính ngắm tăng tầm, Ngựa khiến đối thủ xa hơn. Cảnh trưởng và Vệ sĩ loại Kẻ cướp/Kẻ phản bội; Kẻ phản bội phải là người cuối cùng.',
+                        ),
+                      ),
+                    ),
+                    _menu(
+                      'THOÁT',
+                      Icons.power_settings_new,
+                      SystemNavigator.pop,
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: 'Kiểm tra thẻ bài',
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const CardPreviewScreen(),
+                            ),
+                          ),
+                          icon: const Icon(Icons.style, color: Colors.white),
+                        ),
+                        IconButton(
+                          onPressed: () async {
+                            await GameAudio.instance.toggle();
+                            if (mounted) setState(() {});
+                          },
+                          icon: Icon(
+                            GameAudio.instance.enabled
+                                ? Icons.volume_up
+                                : Icons.volume_off,
+                            color: Colors.white,
                           ),
                         ),
-                        icon: const Icon(Icons.style, color: Colors.white),
-                      ),
-                      IconButton(
-                        onPressed: () async {
-                          await GameAudio.instance.toggle();
-                          if (mounted) setState(() {});
-                        },
-                        icon: Icon(
-                          GameAudio.instance.enabled
-                              ? Icons.volume_up
-                              : Icons.volume_off,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

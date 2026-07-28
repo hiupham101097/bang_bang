@@ -30,6 +30,8 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/images/bang_bang_logo.png
+    - assets/images/room_table.png
     - assets/images/wild_west_town.png
     - assets/images/role_sheriff.png
     - assets/images/role_deputy.png
@@ -41,3 +43,12 @@ flutter:
     - assets/images/effects/
     - assets/images/role_cards/
     - assets/audio/western_theme.wav
+    - assets/audio/splash_intro.wav
+    - assets/audio/button_tap.wav
+    - assets/audio/card_draw.wav
+    - assets/audio/card_play.wav
+    - assets/audio/bang_shot.wav
+    - assets/audio/dodge.wav
+    - assets/audio/damage.wav
+    - assets/audio/win.wav
+    - assets/audio/lose.wav

@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   testWidgets('renders the Bang Bang home screen', (tester) async {
     await tester.pumpWidget(const BangBangApp());
+    await tester.pump(const Duration(milliseconds: 2500));
+    await tester.pumpAndSettle();
     expect(find.text('BANG BANG'), findsOneWidget);
     expect(find.text('BẮT ĐẦU'), findsOneWidget);
     expect(find.text('NHIỆM VỤ'), findsOneWidget);

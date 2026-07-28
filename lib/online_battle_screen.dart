@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'audio_service.dart';
 import 'card_effect_overlay.dart';
 import 'data/online_room_repository.dart';
 import 'domain/online_models.dart';
@@ -39,6 +40,18 @@ class OnlineBattleScreen extends StatelessWidget {
     Map<String, dynamic> payload,
   ) async {
     try {
+      final cardId = payload['cardId'] as String? ?? '';
+      if (cardId.startsWith('bang_')) {
+        GameAudio.instance.playSfx('bang_shot');
+      } else if (cardId.startsWith('dodge_')) {
+        GameAudio.instance.playSfx('dodge');
+      } else if (name == 'drawTurnCards' || name == 'drawCharacterTurnCards') {
+        GameAudio.instance.playSfx('card_draw');
+      } else if (name == 'acceptBangDamage') {
+        GameAudio.instance.playSfx('damage');
+      } else {
+        GameAudio.instance.playSfx('card_play');
+      }
       await repository.runGameAction(name, {'roomId': room.id, ...payload});
     } catch (error) {
       if (context.mounted) {

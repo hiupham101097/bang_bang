@@ -78,23 +78,30 @@ class HybridOnlineRoomRepository implements OnlineRoomRepository {
     }
   }
 
-  Future<T> _call<T>(
+  Future<void> _mutate(
     String name,
     Map<String, dynamic> payload,
-    Future<T> Function() local,
+    Future<void> Function() local,
   ) async {
     if (_useFallback) return local();
     try {
       await functions.httpsCallable(name).call(payload);
-      return local();
     } on FirebaseFunctionsException {
       _useFallback = true;
-      return local();
+      await local();
     } on FirebaseException {
       _useFallback = true;
-      return local();
+      await local();
     }
   }
+
+  OnlineRoom _remoteRoom(String roomId, RoomSettings settings) => OnlineRoom(
+    id: roomId,
+    code: roomId,
+    settings: settings,
+    hostUid: firebaseAuth.currentUser?.uid ?? '',
+    members: const [],
+  );
 
   @override
   Future<Map<String, dynamic>> runGameAction(
@@ -299,60 +306,113 @@ class HybridOnlineRoomRepository implements OnlineRoomRepository {
   };
 
   @override
-  Future<OnlineRoom> createRoom(RoomSettings settings) => _call('createRoom', {
-    'roomName': settings.roomName,
-    'maxPlayers': settings.maxPlayers,
-    'isPublic': settings.isPublic,
-    'turnDurationSeconds': settings.turnDurationSeconds,
-    'voiceEnabled': settings.voiceEnabled,
-    'chatEnabled': settings.chatEnabled,
-    'allowBots': settings.allowBots,
-  }, () => _fallback.createRoom(settings));
+  Future<OnlineRoom> createRoom(RoomSettings settings) async {
+    if (_useFallback) return _fallback.createRoom(settings);
+    try {
+      final result = await functions.httpsCallable('createRoom').call({
+        'roomName': settings.roomName,
+        'maxPlayers': settings.maxPlayers,
+        'isPublic': settings.isPublic,
+        'turnDurationSeconds': settings.turnDurationSeconds,
+        'voiceEnabled': settings.voiceEnabled,
+        'chatEnabled': settings.chatEnabled,
+        'allowBots': settings.allowBots,
+      });
+      final data = Map<String, dynamic>.from(result.data as Map);
+      final roomId = data['roomId'] as String;
+      return _remoteRoom(roomId, settings);
+    } on FirebaseException {
+      _useFallback = true;
+      return _fallback.createRoom(settings);
+    }
+  }
 
   @override
-  Future<OnlineRoom> joinRoom(String roomId) =>
-      _call('joinRoom', {'roomId': roomId}, () => _fallback.joinRoom(roomId));
+  Future<OnlineRoom> joinRoom(String roomId) async {
+    if (_useFallback) return _fallback.joinRoom(roomId);
+    try {
+      final result = await functions.httpsCallable('joinRoom').call({
+        'roomId': roomId,
+      });
+      final data = Map<String, dynamic>.from(result.data as Map);
+      return _remoteRoom(
+        data['roomId'] as String,
+        const RoomSettings(roomName: 'Đang tải phòng'),
+      );
+    } on FirebaseException {
+      _useFallback = true;
+      return _fallback.joinRoom(roomId);
+    }
+  }
 
   @override
-  Future<OnlineRoom?> joinByCode(String code) =>
-      _call('joinRoom', {'roomCode': code}, () => _fallback.joinByCode(code));
+  Future<OnlineRoom?> joinByCode(String code) async {
+    if (_useFallback) return _fallback.joinByCode(code);
+    try {
+      final result = await functions.httpsCallable('joinRoom').call({
+        'roomCode': code,
+      });
+      final data = Map<String, dynamic>.from(result.data as Map);
+      final roomId = data['roomId'] as String?;
+      return roomId == null
+          ? null
+          : _remoteRoom(roomId, const RoomSettings(roomName: 'Đang tải phòng'));
+    } on FirebaseException {
+      _useFallback = true;
+      return _fallback.joinByCode(code);
+    }
+  }
 
   @override
-  Future<OnlineRoom?> quickJoin() =>
-      _call('quickJoinRoom', const {}, _fallback.quickJoin);
+  Future<OnlineRoom?> quickJoin() async {
+    if (_useFallback) return _fallback.quickJoin();
+    try {
+      final result = await functions.httpsCallable('quickJoinRoom').call();
+      final data = Map<String, dynamic>.from(result.data as Map);
+      final roomId = data['roomId'] as String?;
+      return roomId == null
+          ? null
+          : _remoteRoom(roomId, const RoomSettings(roomName: 'Đang tải phòng'));
+    } on FirebaseException {
+      _useFallback = true;
+      return _fallback.quickJoin();
+    }
+  }
 
   @override
-  Future<void> leaveRoom(String roomId) =>
-      _call('leaveRoom', {'roomId': roomId}, () => _fallback.leaveRoom(roomId));
+  Future<void> leaveRoom(String roomId) => _mutate('leaveRoom', {
+    'roomId': roomId,
+  }, () => _fallback.leaveRoom(roomId));
 
   @override
-  Future<void> setReady(String roomId, bool ready) => _call('setReady', {
+  Future<void> setReady(String roomId, bool ready) => _mutate('setReady', {
     'roomId': roomId,
     'isReady': ready,
   }, () => _fallback.setReady(roomId, ready));
 
   @override
-  Future<void> addBot(String roomId, String difficulty) => _call('addBot', {
+  Future<void> addBot(String roomId, String difficulty) => _mutate('addBot', {
     'roomId': roomId,
     'difficulty': difficulty,
   }, () => _fallback.addBot(roomId, difficulty));
 
   @override
-  Future<void> removeBot(String roomId, String botId) => _call('removeBot', {
+  Future<void> removeBot(String roomId, String botId) => _mutate('removeBot', {
     'roomId': roomId,
     'botId': botId,
   }, () => _fallback.removeBot(roomId, botId));
 
   @override
-  Future<void> startGame(String roomId) =>
-      _call('startGame', {'roomId': roomId}, () => _fallback.startGame(roomId));
+  Future<void> startGame(String roomId) => _mutate('startGame', {
+    'roomId': roomId,
+  }, () => _fallback.startGame(roomId));
 
   @override
   Future<void> chooseCharacter(
     String roomId,
     String characterId,
     String actionId,
-  ) => _call('chooseCharacter', {
+  ) => _mutate('chooseCharacter', {
     'roomId': roomId,
     'characterId': characterId,
     'actionId': actionId,

@@ -131,9 +131,14 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
       builder: (_) => const CreateRoomDialog(),
     );
     if (settings != null) {
-      await _open(
-        await model.run(() => widget.repository.createRoom(settings)),
+      final room = await model.run(
+        () => widget.repository.createRoom(settings),
       );
+      if (room == null) return;
+      for (var index = 0; index < settings.initialBotCount; index++) {
+        await model.run(() => widget.repository.addBot(room.id, 'normal'));
+      }
+      await _open(room);
     }
   }
 
@@ -167,13 +172,18 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
                 runSpacing: 8,
                 children: [
                   SizedBox(
-                    width: 200,
+                    width: 150,
                     child: TextField(
                       controller: code,
                       textCapitalization: TextCapitalization.characters,
                       decoration: const InputDecoration(
                         hintText: 'Nhập mã phòng',
                         filled: true,
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 10,
+                        ),
                       ),
                       onSubmitted: (_) => _joinCode(),
                     ),
@@ -215,6 +225,13 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
   );
 
   Widget _rooms() {
+    if (model.rooms.isNotEmpty) {
+      return RoomGrid(
+        rooms: model.rooms,
+        onJoin: (room) async =>
+            _open(await model.run(() => widget.repository.joinRoom(room.id))),
+      );
+    }
     if (model.rooms.isEmpty) {
       return const Center(child: Text('Chưa có phòng công khai đang chờ.'));
     }
@@ -241,6 +258,85 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+class RoomGrid extends StatelessWidget {
+  const RoomGrid({super.key, required this.rooms, required this.onJoin});
+
+  final List<OnlineRoom> rooms;
+  final Future<void> Function(OnlineRoom room) onJoin;
+
+  @override
+  Widget build(BuildContext context) {
+    if (rooms.isEmpty) {
+      return const Center(child: Text('Chưa có bàn công khai.'));
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) => GridView.builder(
+        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: constraints.maxWidth >= 1050 ? 260 : 320,
+          mainAxisExtent: 150,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+        ),
+        itemCount: rooms.length,
+        itemBuilder: (context, index) {
+          final room = rooms[index];
+          return InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => onJoin(room),
+            child: Ink(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                image: const DecorationImage(
+                  image: AssetImage('assets/images/room_table.png'),
+                  fit: BoxFit.cover,
+                  opacity: .75,
+                ),
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  gradient: const LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [Color(0xdd160c08), Color(0x22160c08)],
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      room.settings.roomName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${room.totalCount}/${room.settings.maxPlayers} người',
+                      style: const TextStyle(color: Color(0xffffd272)),
+                    ),
+                    Text(
+                      'Mã ${room.code}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -374,9 +470,13 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Expanded(
+                  SizedBox(
+                    width: 260,
                     child: Text(
                       'Cần ≥4 tổng, ≥2 người thật và mọi người thật sẵn sàng. ${error ?? ''}',
                     ),
@@ -486,7 +586,7 @@ class CreateRoomDialog extends StatefulWidget {
 
 class _CreateRoomDialogState extends State<CreateRoomDialog> {
   final name = TextEditingController();
-  int maxPlayers = 8, duration = 45;
+  int maxPlayers = 8, duration = 45, botCount = 0;
   bool isPublic = true, voice = true, chat = true, bots = true;
   @override
   void dispose() {
@@ -516,7 +616,10 @@ class _CreateRoomDialogState extends State<CreateRoomDialog> {
                     (v) => DropdownMenuItem(value: v, child: Text('$v người')),
                   )
                   .toList(),
-              onChanged: (v) => setState(() => maxPlayers = v ?? 8),
+              onChanged: (v) => setState(() {
+                maxPlayers = v ?? 8;
+                if (botCount >= maxPlayers) botCount = maxPlayers - 1;
+              }),
             ),
             DropdownButtonFormField<int>(
               initialValue: duration,
@@ -527,6 +630,21 @@ class _CreateRoomDialogState extends State<CreateRoomDialog> {
                   )
                   .toList(),
               onChanged: (v) => setState(() => duration = v ?? 45),
+            ),
+            DropdownButtonFormField<int>(
+              initialValue: botCount,
+              decoration: const InputDecoration(labelText: 'Thêm bot ngay'),
+              items: List.generate(maxPlayers, (index) => index)
+                  .map(
+                    (value) => DropdownMenuItem(
+                      value: value,
+                      child: Text('$value bot'),
+                    ),
+                  )
+                  .toList(),
+              onChanged: bots
+                  ? (value) => setState(() => botCount = value ?? 0)
+                  : null,
             ),
             SwitchListTile(
               value: isPublic,
@@ -571,6 +689,7 @@ class _CreateRoomDialogState extends State<CreateRoomDialog> {
               voiceEnabled: voice,
               chatEnabled: chat,
               allowBots: bots,
+              initialBotCount: bots ? botCount : 0,
             ),
           );
         },

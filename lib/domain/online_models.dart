@@ -53,6 +53,7 @@ class RoomSettings {
     this.voiceEnabled = true,
     this.chatEnabled = true,
     this.allowBots = true,
+    this.initialBotCount = 0,
   });
 
   final String roomName;
@@ -62,6 +63,7 @@ class RoomSettings {
   final bool voiceEnabled;
   final bool chatEnabled;
   final bool allowBots;
+  final int initialBotCount;
 }
 
 class OnlineRoom {
