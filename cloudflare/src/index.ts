@@ -195,12 +195,12 @@ export class BangBangMatch extends DurableObject<Env> {
     const state = await this.load();
     if (state.status === "starting" && state.phase === "role_selection" && state.characterSelectionDeadline && Date.now() >= state.characterSelectionDeadline) {
       this.fillMissingRoles(state);
-      this.startCharacterSelection(state);
+      await this.startCharacterSelection(state);
       await this.save(state);
     } else if (state.status === "starting" && (state.phase === "character_selection" || state.phase === "choosing_character") && state.characterSelectionDeadline && Date.now() >= state.characterSelectionDeadline) {
-      this.fillMissingCharacters(state);
+      await this.fillMissingCharacters(state);
       state.publicLog.push("Het gio chon nhan vat: he thong da chon ngau nhien.");
-      this.finalizeCharacters(state);
+      await this.finalizeCharacters(state);
       await this.save(state);
     } else if (state.phase === "waiting_response" && state.pendingBang && Date.now() >= state.pendingBang.deadline) {
       const pending = state.pendingBang;
@@ -213,8 +213,9 @@ export class BangBangMatch extends DurableObject<Env> {
         else this.advancePendingResponse(state, pending);
       }
       await this.save(state);
-    } else if (state.status === "playing" && state.phase !== "waiting_response") {
+    } else if (state.status === "playing" && state.phase !== "waiting_response" && state.turnDeadline && Date.now() >= state.turnDeadline) {
       await this.resolveTurnTimeout(state);
+      await this.save(state);
     }
   }
 
@@ -265,24 +266,24 @@ export class BangBangMatch extends DurableObject<Env> {
         state.players = state.players.filter((item) => item.id !== botId || !item.bot);
         if (state.players.length === before) throw Error("Không tìm thấy bot.");
         state.players.forEach((item, index) => item.seat = index);
-      } else if (command.action === "start") this.start(state, user.id);
-      else if (command.action === "choose_role") this.chooseRole(state, user.id, String(payload.cardId || ""));
-      else if (command.action === "take_character_card") this.takeCharacterCard(state, user.id, String(payload.cardId || ""));
-      else if (command.action === "choose_character") this.chooseCharacter(state, user.id, String(payload.characterId || ""));
-      else if (command.action === "draw") this.draw(state, user.id, String(payload.targetPlayerId || ""));
+      } else if (command.action === "start") await this.start(state, user.id);
+      else if (command.action === "choose_role") await this.chooseRole(state, user.id, String(payload.cardId || ""));
+      else if (command.action === "take_character_card") await this.takeCharacterCard(state, user.id, String(payload.cardId || ""));
+      else if (command.action === "choose_character") await this.chooseCharacter(state, user.id, String(payload.characterId || ""));
+      else if (command.action === "draw") await this.draw(state, user.id, String(payload.targetPlayerId || ""));
       else if (command.action === "play") this.play(state, user.id, String(payload.cardId || ""), String(payload.targetPlayerId || ""), payload);
       else if (command.action === "respond_bang") this.respondBang(state, user.id, String(payload.response || "damage"), String(payload.cardId || ""), Array.isArray(payload.cardIds) ? payload.cardIds.map(String) : []);
       else if (command.action === "choose_general_store") this.chooseGeneralStore(state, user.id, String(payload.cardId || ""));
       else if (command.action === "sid_ketchum") this.useSidKetchum(state, user.id, Array.isArray(payload.cardIds) ? payload.cardIds.map(String) : []);
       else if (command.action === "end_turn") await this.endTurn(state, user.id);
-      else if (command.action === "discard") this.discardCards(state, user.id, Array.isArray(payload.cardIds) ? payload.cardIds.map(String) : []);
+      else if (command.action === "discard") await this.discardCards(state, user.id, Array.isArray(payload.cardIds) ? payload.cardIds.map(String) : []);
     }
     for (const candidate of state.players) this.maybeSuzy(state, candidate);
     await this.save(state);
     return state;
   }
 
-  private start(state: MatchState, userId: string): void {
+  private async start(state: MatchState, userId: string): Promise<void> {
     if (state.hostId !== userId || state.status !== "waiting") throw Error("Chỉ chủ phòng được bắt đầu.");
     if (state.players.length < 4) throw Error("Cần đủ 4–8 người chơi.");
     if (state.players.some((player) => !player.bot && player.id !== userId && !player.ready)) throw Error("Khách chưa sẵn sàng.");
@@ -300,9 +301,9 @@ export class BangBangMatch extends DurableObject<Env> {
     state.publicLog.push("Moi nguoi dang chon vai tro.");
     for (const bot of state.players.filter((player) => player.bot)) this.pickRandomRole(state, bot);
     void this.ctx.storage.setAlarm(state.characterSelectionDeadline);
-    if (state.players.every((player) => state.roleDeck?.some((card) => card.pickedBy === player.id))) this.startCharacterSelection(state);
+    if (state.players.every((player) => state.roleDeck?.some((card) => card.pickedBy === player.id))) await this.startCharacterSelection(state);
   }
-  private chooseRole(state: MatchState, userId: string, cardId: string): void {
+  private async chooseRole(state: MatchState, userId: string, cardId: string): Promise<void> {
     if (state.status !== "starting" || state.phase !== "role_selection") throw Error("Khong o giai doan chon vai tro.");
     const player = this.player(state, userId);
     if (state.roleDeck?.some((card) => card.pickedBy === userId)) throw Error("Ban da chon vai tro.");
@@ -310,7 +311,7 @@ export class BangBangMatch extends DurableObject<Env> {
     if (!card) throw Error("La vai tro khong hop le.");
     card.pickedBy = userId;
     player.role = card.value as Role;
-    if (state.players.every((item) => state.roleDeck?.some((card) => card.pickedBy === item.id))) this.startCharacterSelection(state);
+    if (state.players.every((item) => state.roleDeck?.some((card) => card.pickedBy === item.id))) await this.startCharacterSelection(state);
   }
   private pickRandomRole(state: MatchState, player: Player): void {
     if (state.roleDeck?.some((card) => card.pickedBy === player.id)) return;
@@ -339,7 +340,7 @@ export class BangBangMatch extends DurableObject<Env> {
       player.role = missing[index];
     });
   }
-  private startCharacterSelection(state: MatchState): void {
+  private async startCharacterSelection(state: MatchState): Promise<void> {
     this.normalizeRoles(state);
     const offered = shuffle(characters).slice(0, state.players.length * 2);
     state.characterDeck = offered.map((value, index) => ({ id: `character_${index}_${value}`, value }));
@@ -352,15 +353,15 @@ export class BangBangMatch extends DurableObject<Env> {
     state.characterSelectionDeadline = Date.now() + 60000;
     state.publicLog.push("Moi nguoi dang chon 2 la nhan vat.");
     for (const bot of state.players.filter((player) => player.bot)) {
-      this.takeRandomCharacterCard(state, bot);
-      this.takeRandomCharacterCard(state, bot);
+      await this.takeRandomCharacterCard(state, bot);
+      await this.takeRandomCharacterCard(state, bot);
       bot.characterId = bot.characterOptions?.[0];
       bot.characterChosen = Boolean(bot.characterId);
     }
     void this.ctx.storage.setAlarm(state.characterSelectionDeadline);
-    this.finalizeCharacters(state);
+    await this.finalizeCharacters(state);
   }
-  private takeCharacterCard(state: MatchState, userId: string, cardId: string): void {
+  private async takeCharacterCard(state: MatchState, userId: string, cardId: string): Promise<void> {
     if (state.status !== "starting" || state.phase !== "character_selection") throw Error("Khong o giai doan chon nhan vat.");
     const player = this.player(state, userId);
     player.characterOptions ??= [];
@@ -369,41 +370,42 @@ export class BangBangMatch extends DurableObject<Env> {
     if (!card) throw Error("La nhan vat khong hop le.");
     card.pickedBy = userId;
     player.characterOptions.push(card.value);
-    this.advanceCharacterChoicePhase(state);
+    await this.advanceCharacterChoicePhase(state);
   }
-  private takeRandomCharacterCard(state: MatchState, player: Player): void {
+  private async takeRandomCharacterCard(state: MatchState, player: Player): Promise<void> {
     player.characterOptions ??= [];
     if (player.characterOptions.length >= 2) return;
     const card = shuffle(state.characterDeck?.filter((item) => !item.pickedBy) ?? [])[0];
     if (!card) return;
     card.pickedBy = player.id;
     player.characterOptions.push(card.value);
-    this.advanceCharacterChoicePhase(state);
+    await this.advanceCharacterChoicePhase(state);
   }
-  private advanceCharacterChoicePhase(state: MatchState): void {
+  private async advanceCharacterChoicePhase(state: MatchState): Promise<void> {
     if (state.phase === "character_selection" && state.players.every((player) => (player.characterOptions?.length ?? 0) >= 2)) {
       state.phase = "choosing_character";
       state.publicLog.push("Moi nguoi chon 1 trong 2 la nhan vat.");
+      if (state.players.every((player) => player.characterChosen && player.characterId)) await this.finalizeCharacters(state);
     }
   }
-  private fillMissingCharacters(state: MatchState): void {
+  private async fillMissingCharacters(state: MatchState): Promise<void> {
     for (const player of state.players) {
-      while ((player.characterOptions?.length ?? 0) < 2) this.takeRandomCharacterCard(state, player);
+      while ((player.characterOptions?.length ?? 0) < 2) await this.takeRandomCharacterCard(state, player);
       if (!player.characterChosen) {
         player.characterId = player.characterOptions?.[0];
         player.characterChosen = Boolean(player.characterId);
       }
     }
   }
-  private chooseCharacter(state: MatchState, userId: string, characterId: string): void {
+  private async chooseCharacter(state: MatchState, userId: string, characterId: string): Promise<void> {
     if (state.status !== "starting" || (state.phase !== "character_selection" && state.phase !== "choosing_character")) throw Error("Khong o giai doan chon nhan vat.");
     const player = this.player(state, userId);
     if ((player.characterOptions?.length ?? 0) < 2) throw Error("Can chon du 2 la nhan vat truoc.");
     if (player.characterChosen || !player.characterOptions?.includes(characterId)) throw Error("Nhân vật không hợp lệ.");
     player.characterId = characterId; player.characterChosen = true;
-    this.finalizeCharacters(state);
+    await this.finalizeCharacters(state);
   }
-  private finalizeCharacters(state: MatchState): void {
+  private async finalizeCharacters(state: MatchState): Promise<void> {
     if (state.players.some((player) => !player.characterChosen || !player.characterId)) return;
     state.characterSelectionDeadline = undefined;
     const cards = shuffle(deck()); let cursor = 0;
@@ -422,13 +424,13 @@ export class BangBangMatch extends DurableObject<Env> {
     state.publicLog.push(`${openerDraws[0]?.player.name ?? "Nguoi choi"} boc la cao nhat (${openerDraws[0]?.card ?? ""}).`);
     state.turnDeadline = Date.now() + state.turnDurationSeconds * 1000;
     void this.ctx.storage.setAlarm(state.turnDeadline);
-    this.runBotTurn(state);
+    await this.runBotTurn(state);
   }
 
-  private draw(state: MatchState, userId: string, jesseTargetId = ""): void {
+  private async draw(state: MatchState, userId: string, jesseTargetId = ""): Promise<void> {
     this.requireTurn(state, userId, "turn_start");
     const player = this.player(state, userId);
-    if (this.resolveTurnJudgments(state, player)) return;
+    if (await this.resolveTurnJudgments(state, player)) return;
     const cards: string[] = [];
     if (player.characterId === "kit_carlson") {
       const peek = state.deck.splice(0, 3);
@@ -661,7 +663,7 @@ export class BangBangMatch extends DurableObject<Env> {
     return chosen;
   }
   private isHeart(card: string | undefined): boolean { return card?.endsWith("_heart") === true; }
-  private resolveTurnJudgments(state: MatchState, player: Player): boolean {
+  private async resolveTurnJudgments(state: MatchState, player: Player): Promise<boolean> {
     const jail = player.equipment.find((card) => typeOf(card) === "jail");
     if (jail) {
       player.equipment = player.equipment.filter((card) => card !== jail);
@@ -669,7 +671,7 @@ export class BangBangMatch extends DurableObject<Env> {
       const card = this.judge(state, player, (value) => this.isHeart(value));
       if (!this.isHeart(card)) {
         state.publicLog.push(`${player.name} không thoát Jail và mất lượt.`);
-        void this.advanceTurn(state, "Mất lượt vì Jail");
+        await this.advanceTurn(state, "Mất lượt vì Jail");
         return true;
       }
       state.publicLog.push(`${player.name} thoát Jail.`);
@@ -700,17 +702,17 @@ export class BangBangMatch extends DurableObject<Env> {
     if (player.characterId !== "jourdonnais" && !player.equipment.some((card) => typeOf(card) === "barrel")) return false;
     return this.isHeart(this.judge(state, player, (value) => this.isHeart(value)));
   }
-  private discardCards(state: MatchState, userId: string, cards: string[]): void {
+  private async discardCards(state: MatchState, userId: string, cards: string[]): Promise<void> {
     this.requireTurn(state, userId, "discard_phase"); const player = this.player(state, userId); const required = player.hand.length - player.health;
     if (cards.length !== required || cards.some((card) => !player.hand.includes(card))) throw Error(`Phải bỏ đúng ${required} lá.`);
-    player.hand = player.hand.filter((card) => !cards.includes(card)); player.cardCount = player.hand.length; state.discard.push(...cards); state.phase = "turn_start"; void this.advanceTurn(state, "Bỏ bài");
+    player.hand = player.hand.filter((card) => !cards.includes(card)); player.cardCount = player.hand.length; state.discard.push(...cards); state.phase = "turn_start"; await this.advanceTurn(state, "Bỏ bài");
   }
 
   private async resolveTurnTimeout(state: MatchState): Promise<void> {
     const currentId = state.currentTurnPlayerId;
     if (!currentId) return;
     if (state.phase === "turn_start") {
-      this.draw(state, currentId);
+      await this.draw(state, currentId);
       if ((state.phase as Phase) !== "play_phase") return;
     }
     const player = this.player(state, currentId);
@@ -726,19 +728,19 @@ export class BangBangMatch extends DurableObject<Env> {
   }
   private async advanceTurn(state: MatchState, reason: string): Promise<void> {
     const alive = state.players.filter((player) => player.alive).sort((a, b) => a.seat - b.seat); const index = alive.findIndex((player) => player.id === state.currentTurnPlayerId);
-    state.currentTurnPlayerId = alive[(index + 1) % alive.length].id; state.turnNumber++; state.bangUsedThisTurn = 0; state.phase = "turn_start"; state.publicLog.push(reason); state.turnDeadline = Date.now() + state.turnDurationSeconds * 1000; void this.ctx.storage.setAlarm(state.turnDeadline); this.runBotTurn(state);
+    state.currentTurnPlayerId = alive[(index + 1) % alive.length].id; state.turnNumber++; state.bangUsedThisTurn = 0; state.phase = "turn_start"; state.publicLog.push(reason); state.turnDeadline = Date.now() + state.turnDurationSeconds * 1000; void this.ctx.storage.setAlarm(state.turnDeadline); await this.runBotTurn(state);
   }
-  private runBotTurn(state: MatchState): void {
+  private async runBotTurn(state: MatchState): Promise<void> {
     const bot = state.players.find((player) => player.id === state.currentTurnPlayerId);
     if (!bot?.bot || state.status !== "playing" || state.phase !== "turn_start") return;
-    this.draw(state, bot.id);
+    await this.draw(state, bot.id);
     if (String(state.phase) !== "play_phase" || !bot.alive) return;
     const beer = bot.hand.find((card) => typeOf(card) === "beer");
     if (beer && bot.health < bot.maxHealth) this.play(state, bot.id, beer, "");
     const bang = bot.hand.find((card) => typeOf(card) === "bang");
     const target = state.players.find((player) => player.alive && !player.bot && player.id !== bot.id && this.distance(state, bot, player) <= bot.attackRange);
     if (bang && target && String(state.phase) === "play_phase") this.play(state, bot.id, bang, target.id);
-    if (String(state.phase) === "play_phase") void this.endTurn(state, bot.id);
+    if (String(state.phase) === "play_phase") await this.endTurn(state, bot.id);
   }
   private damage(state: MatchState, targetId: string, actorId: string, log: string): void {
     const target = this.player(state, targetId);

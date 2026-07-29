@@ -255,7 +255,7 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
     cardCount: (data['cardCount'] as num?)?.toInt() ?? 0,
     isAlive: data['alive'] != false,
     characterId: data['characterId'] as String?,
-    revealedRole: data['revealedRole'] as String?,
+    revealedRole: data['revealedRole'] as String? ?? data['role'] as String?,
     equipment: List<String>.from(data['equipment'] as List? ?? const []),
     attackRange: (data['attackRange'] as num?)?.toInt() ?? 1,
   );

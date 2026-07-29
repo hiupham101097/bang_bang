@@ -25,12 +25,20 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
   String? _inspectedCharacterId;
   String? _pendingRoleCardId;
   String? _pendingCharacterCardId;
+  String _finalCharacterKey = '';
+  int _finalCharacterRemainingSeconds = 0;
 
   @override
   void initState() {
     super.initState();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
+      if (mounted) {
+        setState(() {
+          if (_finalCharacterRemainingSeconds > 0) {
+            _finalCharacterRemainingSeconds--;
+          }
+        });
+      }
     });
   }
 
@@ -54,6 +62,16 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
               phase == 'character_selection' || phase == 'choosing_character';
           final selectedCharacter = _selectedCharacterForCenter(state);
           final selectedRole = _selectedRoleForCenter(state);
+          final finalCharacterIds = state?.characterOptions.length == 2
+              ? state!.characterOptions
+              : const <String>[];
+          final finalKey = finalCharacterIds.join('|');
+          if (state != null && finalKey != _finalCharacterKey) {
+            _finalCharacterKey = finalKey;
+            _finalCharacterRemainingSeconds = finalKey.isEmpty ? 0 : 10;
+            _inspectedCharacterId = null;
+          }
+          final canLockCharacter = _finalCharacterRemainingSeconds <= 0;
           final hasPickedRole =
               state?.roleDeck.any((card) => card.pickedBy == state.playerId) ??
               false;
@@ -107,12 +125,13 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                               role: selectedRole,
                               selectedCharacterId: selectedCharacter,
                               submitted: state.submitted,
-                              finalCharacterIds:
-                                  state.characterOptions.length >= 2
-                                  ? state.characterOptions
-                                  : const [],
+                              finalCharacterIds: finalCharacterIds,
+                              revealDelaySeconds: finalCharacterIds.isEmpty
+                                  ? 0
+                                  : _finalCharacterRemainingSeconds,
                               canConfirmCharacter:
                                   selectedCharacter != null &&
+                                  canLockCharacter &&
                                   !state.submitted &&
                                   state.characterOptions.contains(
                                     selectedCharacter,
@@ -396,6 +415,7 @@ class _SetupCenterStage extends StatelessWidget {
     required this.selectedCharacterId,
     required this.submitted,
     required this.finalCharacterIds,
+    required this.revealDelaySeconds,
     required this.canConfirmCharacter,
     required this.onConfirmCharacter,
     required this.onInspectCharacter,
@@ -406,6 +426,7 @@ class _SetupCenterStage extends StatelessWidget {
   final String? selectedCharacterId;
   final bool submitted;
   final List<String> finalCharacterIds;
+  final int revealDelaySeconds;
   final bool canConfirmCharacter;
   final VoidCallback? onConfirmCharacter;
   final ValueChanged<String> onInspectCharacter;
@@ -418,8 +439,10 @@ class _SetupCenterStage extends StatelessWidget {
     if (phase == 'character_selection' || phase == 'choosing_character') {
       return _CenterCharacterReveal(
         id: selectedCharacterId,
+        role: role,
         submitted: submitted,
         finalIds: finalCharacterIds,
+        revealDelaySeconds: revealDelaySeconds,
         canConfirm: canConfirmCharacter,
         onConfirm: onConfirmCharacter,
         onInspect: onInspectCharacter,
@@ -454,16 +477,20 @@ class _CenterRoleReveal extends StatelessWidget {
 class _CenterCharacterReveal extends StatelessWidget {
   const _CenterCharacterReveal({
     required this.id,
+    required this.role,
     required this.submitted,
     required this.finalIds,
+    required this.revealDelaySeconds,
     required this.canConfirm,
     required this.onConfirm,
     required this.onInspect,
   });
 
   final String? id;
+  final String? role;
   final bool submitted;
   final List<String> finalIds;
+  final int revealDelaySeconds;
   final bool canConfirm;
   final VoidCallback? onConfirm;
   final ValueChanged<String> onInspect;
@@ -472,104 +499,163 @@ class _CenterCharacterReveal extends StatelessWidget {
   Widget build(BuildContext context) => Center(
     child: id == null
         ? finalIds.length >= 2
-              ? _CenterFinalCards(ids: finalIds, onInspect: onInspect)
+              ? _CenterFinalCards(
+                  ids: finalIds,
+                  role: role,
+                  revealDelaySeconds: revealDelaySeconds,
+                  onInspect: onInspect,
+                )
               : const _CardBack(width: 118, height: 164, label: 'CHON 2 LA')
-        : Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _FramedImageCard(
-                asset: _characterAsset(id!),
-                width: 116,
-                height: 162,
-                footer: _characterName(id!),
-              ),
-              const SizedBox(width: 12),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 170),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _characterName(id!),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xffffd272),
-                        fontWeight: FontWeight.w900,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _characterHint(id!),
-                      maxLines: 4,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 11,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    submitted
-                        ? const Text(
-                            'Dang cho nguoi choi khac...',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          )
-                        : FilledButton(
-                            onPressed: canConfirm ? onConfirm : null,
-                            child: const Text('CHON'),
-                          ),
-                  ],
+        : FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (role != null) ...[
+                  _FramedImageCard(
+                    asset: _roleCardAsset(role!),
+                    width: 72,
+                    height: 101,
+                    footer: _roleLabel(role!),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                _FramedImageCard(
+                  asset: _characterAsset(id!),
+                  width: 116,
+                  height: 162,
+                  footer: _characterName(id!),
                 ),
-              ),
-            ],
+                const SizedBox(width: 12),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 170),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _characterName(id!),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xffffd272),
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _characterHint(id!),
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 11,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      if (revealDelaySeconds > 0)
+                        Text(
+                          'Xem lai $revealDelaySeconds giay roi moi chon.',
+                          style: const TextStyle(
+                            color: Color(0xffffd272),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        )
+                      else
+                        submitted
+                            ? const Text(
+                                'Dang cho nguoi choi khac...',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              )
+                            : FilledButton(
+                                onPressed: canConfirm ? onConfirm : null,
+                                child: const Text('CHON'),
+                              ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
   );
 }
 
 class _CenterFinalCards extends StatelessWidget {
-  const _CenterFinalCards({required this.ids, required this.onInspect});
+  const _CenterFinalCards({
+    required this.ids,
+    required this.role,
+    required this.revealDelaySeconds,
+    required this.onInspect,
+  });
 
   final List<String> ids;
+  final String? role;
+  final int revealDelaySeconds;
   final ValueChanged<String> onInspect;
 
   @override
-  Widget build(BuildContext context) => Column(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      const Text(
-        'CHON 1 TRONG 2 LA',
-        style: TextStyle(
-          color: Color(0xffffd272),
-          fontWeight: FontWeight.w900,
-          fontSize: 14,
-        ),
-      ),
-      const SizedBox(height: 8),
-      Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: ids.take(2).map((id) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 7),
-            child: InkWell(
-              onTap: () => onInspect(id),
-              borderRadius: BorderRadius.circular(10),
-              child: _FramedImageCard(
-                asset: _characterAsset(id),
-                width: 104,
-                height: 146,
-                footer: _characterName(id),
+  Widget build(BuildContext context) => FittedBox(
+    fit: BoxFit.scaleDown,
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (role != null) ...[
+          _FramedImageCard(
+            asset: _roleCardAsset(role!),
+            width: 76,
+            height: 106,
+            footer: _roleLabel(role!),
+          ),
+          const SizedBox(width: 12),
+        ],
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              revealDelaySeconds > 0
+                  ? 'VAI TRO CUA BAN: ${_roleLabel(role ?? '')}'
+                  : 'CHON 1 TRONG 2 LA',
+              style: const TextStyle(
+                color: Color(0xffffd272),
+                fontWeight: FontWeight.w900,
+                fontSize: 14,
               ),
             ),
-          );
-        }).toList(),
-      ),
-    ],
+            const SizedBox(height: 4),
+            if (revealDelaySeconds > 0)
+              Text(
+                'Dang lat bai nhan vat, con $revealDelaySeconds giay de xem.',
+                style: const TextStyle(color: Colors.white70, fontSize: 10),
+              ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: ids.take(2).map((id) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 7),
+                  child: InkWell(
+                    onTap: () => onInspect(id),
+                    borderRadius: BorderRadius.circular(10),
+                    child: _FramedImageCard(
+                      asset: _characterAsset(id),
+                      width: 104,
+                      height: 146,
+                      footer: _characterName(id),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ],
+    ),
   );
 }
 

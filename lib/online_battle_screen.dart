@@ -1186,6 +1186,7 @@ class OnlineBattleScreen extends StatelessWidget {
                 equipment: _EquipmentBar(
                   equipment: currentPlayer?.equipment ?? const [],
                 ),
+                role: currentPlayer?.revealedRole,
                 handDock: _BattleHandDock(
                   repository: repository,
                   room: room,
@@ -1221,11 +1222,90 @@ class OnlineBattleScreen extends StatelessWidget {
                 ),
               ),
             ),
+            _TurnTimeoutDriver(
+              roomId: room.id,
+              phase: phase,
+              deadline: room.turnDeadlineAt,
+              isMyTurn: isMyTurn,
+              onTurnStartExpired: canDraw
+                  ? () =>
+                        _drawTurn(context, playerId, activePlayer?.characterId)
+                  : null,
+              onPlayExpired: canPlay
+                  ? () => _call(context, 'requestEndTurn')
+                  : null,
+            ),
           ],
         ),
       );
     },
   );
+}
+
+class _TurnTimeoutDriver extends StatefulWidget {
+  const _TurnTimeoutDriver({
+    required this.roomId,
+    required this.phase,
+    required this.deadline,
+    required this.isMyTurn,
+    required this.onTurnStartExpired,
+    required this.onPlayExpired,
+  });
+
+  final String roomId;
+  final String phase;
+  final DateTime? deadline;
+  final bool isMyTurn;
+  final Future<void> Function()? onTurnStartExpired;
+  final Future<void> Function()? onPlayExpired;
+
+  @override
+  State<_TurnTimeoutDriver> createState() => _TurnTimeoutDriverState();
+}
+
+class _TurnTimeoutDriverState extends State<_TurnTimeoutDriver> {
+  late final Timer _timer;
+  String? _handledKey;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _tick());
+  }
+
+  @override
+  void didUpdateWidget(covariant _TurnTimeoutDriver oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.deadline != widget.deadline ||
+        oldWidget.phase != widget.phase ||
+        oldWidget.roomId != widget.roomId) {
+      _handledKey = null;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _tick());
+  }
+
+  void _tick() {
+    if (!mounted || !widget.isMyTurn || widget.deadline == null) return;
+    if (DateTime.now().isBefore(widget.deadline!)) return;
+    final key = '${widget.roomId}|${widget.phase}|${widget.deadline}';
+    if (_handledKey == key) return;
+    _handledKey = key;
+    if (widget.phase == 'turn_start') {
+      widget.onTurnStartExpired?.call();
+    } else if (widget.phase == 'play_phase') {
+      widget.onPlayExpired?.call();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
 class _BattleStatusStrip extends StatelessWidget {
@@ -1306,6 +1386,7 @@ class _TinyTableButton extends StatelessWidget {
 class _BattleBottomRail extends StatelessWidget {
   const _BattleBottomRail({
     required this.equipment,
+    required this.role,
     required this.handDock,
     required this.pending,
     required this.log,
@@ -1313,6 +1394,7 @@ class _BattleBottomRail extends StatelessWidget {
   });
 
   final Widget equipment;
+  final String? role;
   final Widget handDock;
   final Widget pending;
   final String? log;
@@ -1327,7 +1409,37 @@ class _BattleBottomRail extends StatelessWidget {
           height: 22,
           child: Row(
             children: [
-              SizedBox(width: 96, child: equipment),
+              SizedBox(
+                width: 136,
+                child: Row(
+                  children: [
+                    Expanded(child: equipment),
+                    if (role != null)
+                      Container(
+                        margin: const EdgeInsets.only(left: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xff3a2115),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: const Color(0xffffd44d)),
+                        ),
+                        child: Text(
+                          _battleRoleLabel(role!),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xffffd44d),
+                            fontSize: 8,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
               Expanded(
                 child: DefaultTextStyle(
                   style: const TextStyle(color: Colors.white70, fontSize: 9),
@@ -1343,7 +1455,7 @@ class _BattleBottomRail extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 82),
+              const SizedBox(width: 42),
             ],
           ),
         ),
@@ -1594,7 +1706,12 @@ class _CentralActionArea extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   if (actionCardId != null)
-                    _PublicCardStage(cardId: actionCardId, summary: summary)
+                    _PublicCardStage(
+                      cardId: actionCardId,
+                      summary: summary,
+                      actorName: actor?.displayName,
+                      targetName: target?.displayName,
+                    )
                   else
                     _EmptyActionStage(summary: summary),
                   const SizedBox(width: 8),
@@ -1768,6 +1885,15 @@ String _actionLabel(String? actionType) => switch (actionType) {
   _ => 'HÀNH ĐỘNG',
 };
 
+String _battleRoleLabel(String role) => switch (role) {
+  'sheriff' => 'SHERIFF',
+  'deputy' => 'DEPUTY',
+  'guardian' => 'GUARD',
+  'outlaw' || 'raider' => 'RAIDER',
+  'renegade' || 'traitor' => 'TRAITOR',
+  _ => role.toUpperCase(),
+};
+
 class _PlayerTable extends StatelessWidget {
   const _PlayerTable({
     required this.members,
@@ -1849,9 +1975,11 @@ class _PlayerTable extends StatelessWidget {
               final x = point.dx * constraints.maxWidth - seatWidth / 2;
               final y = point.dy * constraints.maxHeight - seatHeight / 2;
               final member = players[index];
+              final maxLeft = math.max(0.0, constraints.maxWidth - seatWidth);
+              final maxTop = math.max(0.0, constraints.maxHeight - seatHeight);
               return Positioned(
-                left: x.clamp(0.0, constraints.maxWidth - seatWidth),
-                top: y.clamp(0.0, constraints.maxHeight - seatHeight),
+                left: x.clamp(0.0, maxLeft),
+                top: y.clamp(0.0, maxTop),
                 width: seatWidth,
                 height: seatHeight,
                 child: _PlayerSeat(
@@ -1944,6 +2072,7 @@ class _PlayerSeatState extends State<_PlayerSeat> {
   Widget build(BuildContext context) {
     final member = widget.member;
     final active = widget.isCurrent;
+    final sheriff = member.revealedRole == 'sheriff';
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = math.min(constraints.maxWidth, constraints.maxHeight);
@@ -1989,10 +2118,12 @@ class _PlayerSeatState extends State<_PlayerSeat> {
                     : const Color(0xff16100d),
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: active
+                  color: sheriff
+                      ? const Color(0xffffd44d)
+                      : active
                       ? const Color(0xffffc451)
                       : const Color(0xff63432e),
-                  width: active ? 2 : 1,
+                  width: sheriff || active ? 2.5 : 1,
                 ),
                 boxShadow: active && _bright
                     ? const [
@@ -2016,6 +2147,55 @@ class _PlayerSeatState extends State<_PlayerSeat> {
                 ),
               ),
             ),
+            if (sheriff)
+              Positioned(
+                right: constraints.maxWidth * .15,
+                top: constraints.maxHeight * .08,
+                child: Container(
+                  width: 18,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: const Color(0xffffd44d),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xff5a3116)),
+                  ),
+                  child: const Icon(
+                    Icons.star,
+                    size: 13,
+                    color: Color(0xff3a2115),
+                  ),
+                ),
+              ),
+            if (member.equipment.isNotEmpty)
+              Positioned(
+                left: 0,
+                top: constraints.maxHeight * .12,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: member.equipment.take(3).map((cardId) {
+                    return Tooltip(
+                      message: _cardLabel(cardId),
+                      child: Container(
+                        width: 16,
+                        height: 20,
+                        margin: const EdgeInsets.only(right: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xffead39b),
+                          borderRadius: BorderRadius.circular(3),
+                          border: Border.all(color: const Color(0xff5a3116)),
+                        ),
+                        child: Icon(
+                          _isGunCard(cardId)
+                              ? Icons.gps_fixed
+                              : Icons.inventory_2_outlined,
+                          size: 11,
+                          color: const Color(0xff3a2115),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
             Positioned(
               left: 0,
               right: 0,
@@ -2111,10 +2291,17 @@ _BangEvent? _bangEvent(String? log) {
 }
 
 class _PublicCardStage extends StatelessWidget {
-  const _PublicCardStage({required this.cardId, required this.summary});
+  const _PublicCardStage({
+    required this.cardId,
+    required this.summary,
+    required this.actorName,
+    required this.targetName,
+  });
 
   final String cardId;
   final String summary;
+  final String? actorName;
+  final String? targetName;
 
   @override
   Widget build(BuildContext context) => AnimatedSwitcher(
@@ -2146,6 +2333,21 @@ class _PublicCardStage extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (actorName != null) ...[
+                      Text(
+                        targetName == null
+                            ? actorName!
+                            : '$actorName -> $targetName',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xffffd272),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                    ],
                     const Text(
                       'LÁ VỪA ĐÁNH',
                       style: TextStyle(
@@ -2332,6 +2534,9 @@ bool _isEquipmentCard(String cardId) => [
   'dynamite_',
   'jail_',
 ].any(cardId.startsWith);
+
+bool _isGunCard(String cardId) =>
+    cardId.startsWith('gun_range_') || cardId.startsWith('volcanic_');
 
 // ignore: unused_element
 String _actionSummary(OnlineRoom room, Map<String, dynamic> action) {

@@ -176,6 +176,10 @@ void main() {
     await tester.tap(find.text('Lucky Duke'));
     await tester.pump();
     expect(repository.chosenCharacterId, isNull);
+    expect(find.text('CHON'), findsNothing);
+
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pump();
     expect(find.text('CHON'), findsOneWidget);
 
     await tester.tap(find.text('CHON'));
