@@ -937,7 +937,31 @@ class OnlineBattleScreen extends StatelessWidget {
         appBar: AppBar(
           toolbarHeight: 38,
           titleSpacing: 8,
-          title: const Text('BANG BANG — Bàn đấu'),
+          title: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isMyTurn ? 'LƯỢT CỦA BẠN' : 'ĐANG THEO DÕI',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  color: isMyTurn ? bangGold : Colors.white,
+                  letterSpacing: .35,
+                ),
+              ),
+              Text(
+                activePlayer == null
+                    ? _phaseLabel(phase)
+                    : isMyTurn
+                    ? 'Chọn bài ở thanh dưới để chơi'
+                    : 'Lượt của ${activePlayer.displayName}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 8, color: Colors.white70),
+              ),
+            ],
+          ),
           actions: [
             if (room.settings.voiceEnabled && GameVoiceChat.isAvailable)
               AnimatedBuilder(
@@ -986,7 +1010,9 @@ class OnlineBattleScreen extends StatelessWidget {
           isMyTurn: isMyTurn,
           canPlay: canPlay,
           activePlayer: activePlayer,
-          onPlay: (cardId) => _playCard(context, cardId, playerId),
+          onPlay: playerId == null
+              ? (_) async {}
+              : (cardId) => _playCard(context, cardId, playerId),
         ),
         body: Stack(
           children: [
@@ -994,591 +1020,510 @@ class OnlineBattleScreen extends StatelessWidget {
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   image: DecorationImage(
-                    image: AssetImage('assets/images/wild_west_town.png'),
+                    image: AssetImage('assets/images/room_table.png'),
                     fit: BoxFit.cover,
-                    opacity: .48,
+                    opacity: .76,
                   ),
                 ),
               ),
             ),
-            const Positioned.fill(
-              child: ColoredBox(color: Color(0xa9160c08)),
-            ),
+            const Positioned.fill(child: ColoredBox(color: Color(0xa9160c08))),
             SafeArea(
               top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
-            child: ListView(
-              children: [
-                BangStatusPill(
-                  label: isMyTurn ? 'LƯỢT CỦA BẠN' : 'ĐANG THEO DÕI',
-                  color: isMyTurn ? bangGold : Colors.white70,
-                  icon: isMyTurn
-                      ? Icons.local_fire_department_outlined
-                      : Icons.visibility_outlined,
-                ),
-                const SizedBox(height: 7),
-                Text(
-                  activePlayer == null
-                      ? _phaseLabel(phase)
-                      : isMyTurn
-                      ? 'ĐẾN LƯỢT CỦA BẠN'
-                      : 'ĐANG CHỜ ${activePlayer.displayName.toUpperCase()}',
-                  style: const TextStyle(
-                    fontSize: 17,
-                    color: Color(0xffffc451),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                _TurnCountdown(
-                  deadline: room.turnDeadlineAt,
-                  isMyTurn: isMyTurn,
-                  // Timeout resolution is server-authoritative. The client only
-                  // paints the remaining time and waits for the next snapshot.
-                  onExpired: () {},
-                ),
-                if (isMyTurn && room.phase == 'play_phase')
-                  Text(
-                    'Bạn có thể dùng thẻ chức năng/trang bị; BANG bị giới hạn theo kỹ năng và súng.',
-                    style: const TextStyle(color: Color(0xffffd272)),
-                  ),
-                const SizedBox(height: 10),
-                _TurnSteps(phase: phase),
-                const SizedBox(height: 8),
-                _CentralActionArea(
-                  repository: repository,
-                  room: room,
-                  playerId: playerId,
-                ),
-                if (room.publicLog.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    height: 34,
-                    child: ListView(
-                      physics: const NeverScrollableScrollPhysics(),
-                      children: room.publicLog.reversed
-                          .take(2)
-                          .map(
-                            (entry) => Text(
-                              _publicLogLabel(room, entry),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          )
-                          .toList(),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+                child: ListView(
+                  children: [
+                    const SizedBox(height: 2),
+                    Text(
+                      activePlayer == null
+                          ? _phaseLabel(phase)
+                          : isMyTurn
+                          ? 'ĐẾN LƯỢT CỦA BẠN'
+                          : 'ĐANG CHỜ ${activePlayer.displayName.toUpperCase()}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Color(0xffffc451),
+                      ),
                     ),
-                  ),
-                ],
-                const SizedBox(height: 10),
-                _EquipmentBar(equipment: currentPlayer?.equipment ?? const []),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'BÀI TRÊN TAY',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                StreamBuilder<List<String>>(
-                  stream: repository.watchHand(room.id),
-                  builder: (context, snapshot) {
-                    final cards = snapshot.data ?? const <String>[];
-                    final discardRequired =
-                        (activePlayer == null
-                                ? 0
-                                : cards.length - activePlayer.health)
-                            .clamp(0, cards.length)
-                            .toInt();
-                    if (cards.isEmpty) {
-                      return const Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text('Chưa có bài hoặc đang chờ đồng bộ.'),
-                      );
-                    }
-                    final selectedNotifier = _selectedHandCard(room.id);
-                    if (selectedNotifier.value != null &&
-                        !cards.contains(selectedNotifier.value)) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (!cards.contains(selectedNotifier.value)) {
-                          selectedNotifier.value = null;
+                    const SizedBox(height: 4),
+                    _TurnCountdown(
+                      deadline: room.turnDeadlineAt,
+                      isMyTurn: isMyTurn,
+                      // Timeout resolution is server-authoritative. The client only
+                      // paints the remaining time and waits for the next snapshot.
+                      onExpired: () {},
+                    ),
+                    if (isMyTurn && room.phase == 'play_phase')
+                      Text(
+                        'Bạn có thể dùng thẻ chức năng/trang bị; BANG bị giới hạn theo kỹ năng và súng.',
+                        style: const TextStyle(color: Color(0xffffd272)),
+                      ),
+                    const SizedBox(height: 10),
+                    _TurnSteps(phase: phase),
+                    const SizedBox(height: 8),
+                    _CentralActionArea(
+                      repository: repository,
+                      room: room,
+                      playerId: playerId,
+                    ),
+                    if (room.publicLog.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 34,
+                        child: ListView(
+                          physics: const NeverScrollableScrollPhysics(),
+                          children: room.publicLog.reversed
+                              .take(2)
+                              .map(
+                                (entry) => Text(
+                                  _publicLogLabel(room, entry),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    _EquipmentBar(
+                      equipment: currentPlayer?.equipment ?? const [],
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'BÀI TRÊN TAY',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    StreamBuilder<List<String>>(
+                      stream: repository.watchHand(room.id),
+                      builder: (context, snapshot) {
+                        final cards = snapshot.data ?? const <String>[];
+                        final discardRequired =
+                            (activePlayer == null
+                                    ? 0
+                                    : cards.length - activePlayer.health)
+                                .clamp(0, cards.length)
+                                .toInt();
+                        if (cards.isEmpty) {
+                          return const Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text('Chưa có bài hoặc đang chờ đồng bộ.'),
+                          );
                         }
-                      });
-                    }
-                    return ValueListenableBuilder<String?>(
-                      valueListenable: selectedNotifier,
-                      builder: (context, selectedCardId, _) => Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SizedBox(
-                            height: 112,
-                            child: ListView.separated(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: cards.length,
-                              separatorBuilder: (_, _) =>
-                                  const SizedBox(width: 7),
-                              itemBuilder: (context, index) {
-                                final cardId = cards[index];
-                                final canDiscard =
-                                    isMyTurn &&
-                                    phase == 'discard_phase' &&
-                                    discardRequired > 0;
-                                final isBang = cardId.startsWith('bang_');
-                                final unlimitedBang =
-                                    activePlayer?.characterId ==
-                                        'willy_the_kid' ||
-                                    activePlayer?.equipment.any(
-                                          (card) =>
-                                              card.startsWith('volcanic_'),
-                                        ) ==
-                                        true;
-                                final bangBlocked =
-                                    isBang &&
-                                    room.bangUsedThisTurn >= 1 &&
-                                    !unlimitedBang;
-                                final enabled =
-                                    (canPlay && !bangBlocked) || canDiscard;
-                                final actionLabel = bangBlocked
-                                    ? 'ĐÃ DÙNG BANG'
-                                    : phase == 'discard_phase'
-                                    ? 'BỎ'
-                                    : _isEquipmentCard(cardId)
-                                    ? 'ĐẶT'
-                                    : 'ĐÁNH';
-                                return Stack(
-                                  clipBehavior: Clip.none,
-                                  children: [
-                                    GameCardWidget(
-                                      card: _publicGameCard(cardId),
-                                      width: 70,
-                                      isSelected: selectedCardId == cardId,
-                                      isEnabled: enabled,
-                                      onTap: !enabled
-                                          ? null
-                                          : () => selectedNotifier.value =
-                                                selectedCardId == cardId
-                                                ? null
-                                                : cardId,
-                                    ),
-                                    Positioned(
-                                      left: 4,
-                                      right: 4,
-                                      bottom: 3,
-                                      child: IgnorePointer(
-                                        child: DecoratedBox(
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xaa211109),
-                                            borderRadius: BorderRadius.circular(
-                                              4,
-                                            ),
-                                          ),
-                                          child: Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                              vertical: 2,
-                                            ),
-                                            child: Text(
-                                              actionLabel,
-                                              textAlign: TextAlign.center,
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 8,
-                                                fontWeight: FontWeight.w800,
+                        final selectedNotifier = _selectedHandCard(room.id);
+                        if (selectedNotifier.value != null &&
+                            !cards.contains(selectedNotifier.value)) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (!cards.contains(selectedNotifier.value)) {
+                              selectedNotifier.value = null;
+                            }
+                          });
+                        }
+                        return ValueListenableBuilder<String?>(
+                          valueListenable: selectedNotifier,
+                          builder: (context, selectedCardId, _) => Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SizedBox(
+                                height: 112,
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: cards.length,
+                                  separatorBuilder: (_, _) =>
+                                      const SizedBox(width: 7),
+                                  itemBuilder: (context, index) {
+                                    final cardId = cards[index];
+                                    final canDiscard =
+                                        isMyTurn &&
+                                        phase == 'discard_phase' &&
+                                        discardRequired > 0;
+                                    final isBang = cardId.startsWith('bang_');
+                                    final unlimitedBang =
+                                        activePlayer?.characterId ==
+                                            'willy_the_kid' ||
+                                        activePlayer?.equipment.any(
+                                              (card) =>
+                                                  card.startsWith('volcanic_'),
+                                            ) ==
+                                            true;
+                                    final bangBlocked =
+                                        isBang &&
+                                        room.bangUsedThisTurn >= 1 &&
+                                        !unlimitedBang;
+                                    final enabled =
+                                        (canPlay && !bangBlocked) || canDiscard;
+                                    final actionLabel = bangBlocked
+                                        ? 'ĐÃ DÙNG BANG'
+                                        : phase == 'discard_phase'
+                                        ? 'BỎ'
+                                        : _isEquipmentCard(cardId)
+                                        ? 'ĐẶT'
+                                        : 'ĐÁNH';
+                                    return Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        GameCardWidget(
+                                          card: _publicGameCard(cardId),
+                                          width: 70,
+                                          isSelected: selectedCardId == cardId,
+                                          isEnabled: enabled,
+                                          onTap: !enabled
+                                              ? null
+                                              : () => selectedNotifier.value =
+                                                    selectedCardId == cardId
+                                                    ? null
+                                                    : cardId,
+                                        ),
+                                        Positioned(
+                                          left: 4,
+                                          right: 4,
+                                          bottom: 3,
+                                          child: IgnorePointer(
+                                            child: DecoratedBox(
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xaa211109),
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                              ),
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      vertical: 2,
+                                                    ),
+                                                child: Text(
+                                                  actionLabel,
+                                                  textAlign: TextAlign.center,
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 8,
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                                ),
                                               ),
                                             ),
                                           ),
                                         ),
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              },
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          if (selectedCardId == null)
-                            const Text(
-                              'Chạm một lá bài để chọn, sau đó xác nhận hành động.',
-                              style: TextStyle(color: Colors.white70),
-                            )
-                          else
-                            Builder(
-                              builder: (context) {
-                                final isBang = selectedCardId.startsWith(
-                                  'bang_',
-                                );
-                                final unlimitedBang =
-                                    activePlayer?.characterId ==
-                                        'willy_the_kid' ||
-                                    activePlayer?.equipment.any(
-                                          (card) =>
-                                              card.startsWith('volcanic_'),
-                                        ) ==
-                                        true;
-                                final bangBlocked =
-                                    isBang &&
-                                    room.bangUsedThisTurn >= 1 &&
-                                    !unlimitedBang;
-                                final canDiscard =
-                                    isMyTurn &&
-                                    phase == 'discard_phase' &&
-                                    discardRequired > 0;
-                                final canConfirm =
-                                    canDiscard || (canPlay && !bangBlocked);
-                                final actionLabel = canDiscard
-                                    ? 'BỎ BÀI'
-                                    : _isEquipmentCard(selectedCardId)
-                                    ? 'ĐẶT THẺ'
-                                    : 'ĐÁNH';
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Container(
-                                      width: double.infinity,
-                                      margin: const EdgeInsets.only(bottom: 7),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 9,
-                                        vertical: 6,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xff2b170e),
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: const Color(0xff76502e),
-                                        ),
-                                      ),
-                                      child: Text(
-                                        '${_cardLabel(selectedCardId)} · ${_cardDescription(selectedCardId)}',
-                                        style: const TextStyle(
-                                          color: Color(0xffffe3a5),
-                                          fontSize: 11,
-                                        ),
-                                      ),
-                                    ),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: OutlinedButton(
-                                            onPressed: () =>
-                                                selectedNotifier.value = null,
-                                            child: const Text('HỦY'),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          flex: 2,
-                                          child: FilledButton.icon(
-                                            onPressed: !canConfirm
-                                                ? null
-                                                : () async {
-                                                    final card = selectedCardId;
-                                                    if (canDiscard) {
-                                                      await _discardExcessCards(
-                                                        context,
-                                                        cards,
-                                                        discardRequired,
-                                                      );
-                                                    } else {
-                                                      await _playCard(
-                                                        context,
-                                                        card,
-                                                        playerId,
-                                                      );
-                                                    }
-                                                    selectedNotifier.value =
-                                                        null;
-                                                  },
-                                            icon: Icon(
-                                              canDiscard
-                                                  ? Icons.delete_outline
-                                                  : Icons.play_arrow_rounded,
-                                            ),
-                                            label: Text(actionLabel),
-                                          ),
-                                        ),
                                       ],
-                                    ),
-                                    if (isBang) ...[
-                                      const SizedBox(height: 5),
-                                      Text(
-                                        bangBlocked
-                                            ? 'Mỗi lượt chỉ dùng 1 BANG, trừ khi có kỹ năng hoặc Volcanic.'
-                                            : 'Bấm ĐÁNH để chọn mục tiêu trong tầm bắn.',
-                                        style: const TextStyle(
-                                          color: Colors.amberAccent,
-                                          fontSize: 11,
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                );
-                              },
-                            ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-                if (phase == 'dying' && room.dyingPlayerId != null)
-                  StreamBuilder<List<String>>(
-                    stream: repository.watchHand(room.id),
-                    builder: (context, snapshot) {
-                      final hand = snapshot.data ?? const <String>[];
-                      final beer = hand
-                          .where((card) => card.startsWith('beer_'))
-                          .firstOrNull;
-                      final dying = room.memberFor(room.dyingPlayerId!);
-                      final isDyingPlayer = playerId == room.dyingPlayerId;
-                      final requiredBeers = math.max(
-                        1,
-                        1 - (dying?.health ?? 0),
-                      );
-                      final canSelfSave =
-                          hand
-                              .where((card) => card.startsWith('beer_'))
-                              .length >=
-                          requiredBeers;
-                      return Card(
-                        color: const Color(0xff5a1b15),
-                        child: ListTile(
-                          leading: const Icon(
-                            Icons.favorite,
-                            color: Colors.redAccent,
-                          ),
-                          title: Text(
-                            '${dying?.displayName ?? 'Người chơi'} đang hấp hối',
-                          ),
-                          subtitle: const Text(
-                            'Dùng Beer để cứu họ trước khi bị loại.',
-                          ),
-                          trailing: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              if (isDyingPlayer)
-                                FilledButton.tonal(
-                                  onPressed: canSelfSave
-                                      ? () => _callPayload(
-                                          context,
-                                          'resolveDying',
-                                          {'useBeer': true},
-                                        )
-                                      : null,
-                                  child: Text('TỰ CỨU ($requiredBeers BEER)'),
+                                    );
+                                  },
                                 ),
-                              if (isDyingPlayer) const SizedBox(height: 6),
-                              if (isDyingPlayer)
-                                OutlinedButton(
-                                  onPressed: () => _callPayload(
-                                    context,
-                                    'resolveDying',
-                                    {'useBeer': false},
-                                  ),
-                                  child: const Text('BỊ LOẠI'),
+                              ),
+                              const SizedBox(height: 8),
+                              if (selectedCardId == null)
+                                const Text(
+                                  'Chạm một lá bài để chọn, sau đó xác nhận hành động.',
+                                  style: TextStyle(color: Colors.white70),
                                 )
                               else
-                                FilledButton(
-                                  onPressed: beer == null || playerId == null
-                                      ? null
-                                      : () => _callPayload(
-                                          context,
-                                          'saveDyingPlayer',
-                                          {
-                                            'targetPlayerId':
-                                                room.dyingPlayerId,
-                                            'cardId': beer,
-                                          },
+                                Builder(
+                                  builder: (context) {
+                                    final isBang = selectedCardId.startsWith(
+                                      'bang_',
+                                    );
+                                    final unlimitedBang =
+                                        activePlayer?.characterId ==
+                                            'willy_the_kid' ||
+                                        activePlayer?.equipment.any(
+                                              (card) =>
+                                                  card.startsWith('volcanic_'),
+                                            ) ==
+                                            true;
+                                    final bangBlocked =
+                                        isBang &&
+                                        room.bangUsedThisTurn >= 1 &&
+                                        !unlimitedBang;
+                                    final canDiscard =
+                                        isMyTurn &&
+                                        phase == 'discard_phase' &&
+                                        discardRequired > 0;
+                                    final canConfirm =
+                                        canDiscard || (canPlay && !bangBlocked);
+                                    final actionLabel = canDiscard
+                                        ? 'BỎ BÀI'
+                                        : _isEquipmentCard(selectedCardId)
+                                        ? 'ĐẶT THẺ'
+                                        : 'ĐÁNH';
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Container(
+                                          width: double.infinity,
+                                          margin: const EdgeInsets.only(
+                                            bottom: 7,
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 9,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xff2b170e),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            border: Border.all(
+                                              color: const Color(0xff76502e),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            '${_cardLabel(selectedCardId)} · ${_cardDescription(selectedCardId)}',
+                                            style: const TextStyle(
+                                              color: Color(0xffffe3a5),
+                                              fontSize: 11,
+                                            ),
+                                          ),
                                         ),
-                                  child: const Text('DÙNG BEER'),
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: OutlinedButton(
+                                                onPressed: () =>
+                                                    selectedNotifier.value =
+                                                        null,
+                                                child: const Text('HỦY'),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              flex: 2,
+                                              child: FilledButton.icon(
+                                                onPressed: !canConfirm
+                                                    ? null
+                                                    : () async {
+                                                        final card =
+                                                            selectedCardId;
+                                                        if (canDiscard) {
+                                                          await _discardExcessCards(
+                                                            context,
+                                                            cards,
+                                                            discardRequired,
+                                                          );
+                                                        } else {
+                                                          await _playCard(
+                                                            context,
+                                                            card,
+                                                            playerId,
+                                                          );
+                                                        }
+                                                        selectedNotifier.value =
+                                                            null;
+                                                      },
+                                                icon: Icon(
+                                                  canDiscard
+                                                      ? Icons.delete_outline
+                                                      : Icons
+                                                            .play_arrow_rounded,
+                                                ),
+                                                label: Text(actionLabel),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        if (isBang) ...[
+                                          const SizedBox(height: 5),
+                                          Text(
+                                            bangBlocked
+                                                ? 'Mỗi lượt chỉ dùng 1 BANG, trừ khi có kỹ năng hoặc Volcanic.'
+                                                : 'Bấm ĐÁNH để chọn mục tiêu trong tầm bắn.',
+                                            style: const TextStyle(
+                                              color: Colors.amberAccent,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    );
+                                  },
                                 ),
                             ],
                           ),
-                        ),
-                      );
-                    },
-                  ),
-                if (isMyTurn &&
-                    activePlayer?.characterId == 'sid_ketchum' &&
-                    activePlayer!.health < activePlayer.maxHealth)
-                  StreamBuilder<List<String>>(
-                    stream: repository.watchHand(room.id),
-                    builder: (context, snapshot) {
-                      final hand = snapshot.data ?? const <String>[];
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: OutlinedButton.icon(
-                          onPressed: hand.length >= 2
-                              ? () => _useSidKetchum(context, hand)
-                              : null,
-                          icon: const Icon(Icons.favorite_outline),
-                          label: const Text('SID KETCHUM: BỎ 2 HỒI 1'),
-                        ),
-                      );
-                    },
-                  ),
-                StreamBuilder<List<Map<String, dynamic>>>(
-                  stream: repository.watchPendingActions(room.id),
-                  builder: (context, snapshot) {
-                    final action = (snapshot.data ?? const []).firstOrNull;
-                    if (action == null) return const SizedBox.shrink();
-                    final opened = List<String>.from(
-                      action['openedCardIds'] as List? ?? const [],
-                    );
-                    final judgmentChoices = List<String>.from(
-                      action['choices'] as List? ?? const [],
-                    );
-                    final responsePlayerId =
-                        action['currentTargetId'] as String? ??
-                        action['targetPlayerId'] as String?;
-                    final isMyResponse =
-                        playerId != null && responsePlayerId == playerId;
-                    final isMyActor =
-                        playerId != null && action['actorPlayerId'] == playerId;
-                    final isMyGeneralStorePicker =
-                        playerId != null &&
-                        action['currentPickerId'] == playerId;
-                    return Card(
-                      child: Column(
-                        children: [
-                          ListTile(
-                            leading: action['actionType'] == 'bang'
-                                ? _ResponseCountdown(
-                                    deadline: action['responseDeadlineAt'],
-                                    // Cloud Functions resolve an expired
-                                    // response. Never apply combat from a
-                                    // widget timer, otherwise reconnects can
-                                    // resolve the same action twice.
-                                    onExpired: () {},
-                                  )
-                                : null,
-                            title: Text(
-                              'Đang chờ: ${action['actionType'] ?? 'phản ứng'}',
-                            ),
-                            subtitle: Text(_actionSummary(room, action)),
-                            trailing: Wrap(
-                              spacing: 6,
-                              children: [
-                                if (action['actionType'] == 'bang')
-                                  FilledButton.tonal(
-                                    onPressed: isMyResponse
-                                        ? () => _callPayload(
-                                            context,
-                                            'acceptBangDamage',
-                                            {'pendingActionId': action['id']},
-                                          )
-                                        : null,
-                                    child: const Text('NHẬN ĐẠN'),
-                                  ),
-                                if (isMyResponse)
-                                  OutlinedButton(
-                                    onPressed: () => _callPayload(
-                                      context,
-                                      'resolveExpiredResponse',
-                                      {'pendingActionId': action['id']},
+                        );
+                      },
+                    ),
+                    if (phase == 'dying' && room.dyingPlayerId != null)
+                      StreamBuilder<List<String>>(
+                        stream: repository.watchHand(room.id),
+                        builder: (context, snapshot) {
+                          final hand = snapshot.data ?? const <String>[];
+                          final beer = hand
+                              .where((card) => card.startsWith('beer_'))
+                              .firstOrNull;
+                          final dying = room.memberFor(room.dyingPlayerId!);
+                          final isDyingPlayer = playerId == room.dyingPlayerId;
+                          final requiredBeers = math.max(
+                            1,
+                            1 - (dying?.health ?? 0),
+                          );
+                          final canSelfSave =
+                              hand
+                                  .where((card) => card.startsWith('beer_'))
+                                  .length >=
+                              requiredBeers;
+                          return Card(
+                            color: const Color(0xff5a1b15),
+                            child: ListTile(
+                              leading: const Icon(
+                                Icons.favorite,
+                                color: Colors.redAccent,
+                              ),
+                              title: Text(
+                                '${dying?.displayName ?? 'Người chơi'} đang hấp hối',
+                              ),
+                              subtitle: const Text(
+                                'Dùng Beer để cứu họ trước khi bị loại.',
+                              ),
+                              trailing: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  if (isDyingPlayer)
+                                    FilledButton.tonal(
+                                      onPressed: canSelfSave
+                                          ? () => _callPayload(
+                                              context,
+                                              'resolveDying',
+                                              {'useBeer': true},
+                                            )
+                                          : null,
+                                      child: Text(
+                                        'TỰ CỨU ($requiredBeers BEER)',
+                                      ),
                                     ),
-                                    child: const Text('CHẤP NHẬN'),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          if (action['actionType'] == 'general_store' &&
-                              opened.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                              child: Wrap(
-                                spacing: 8,
-                                children: opened
-                                    .map(
-                                      (cardId) => OutlinedButton(
-                                        onPressed: isMyGeneralStorePicker
-                                            ? () => _callPayload(
-                                                context,
-                                                'chooseGeneralStoreCard',
-                                                {
-                                                  'actionId': action['id'],
-                                                  'cardId': cardId,
-                                                },
-                                              )
-                                            : null,
-                                        child: Text(
-                                          cardId.split('_').first.toUpperCase(),
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                              ),
-                            ),
-                          if (action['actionType'] == 'lucky_duke_judgment' &&
-                              judgmentChoices.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                              child: Wrap(
-                                spacing: 8,
-                                children: judgmentChoices
-                                    .map(
-                                      (cardId) => FilledButton.tonal(
-                                        onPressed: isMyActor
-                                            ? () => _callPayload(
-                                                context,
-                                                'chooseLuckyDukeJudgment',
-                                                {
-                                                  'actionId': action['id'],
-                                                  'resultCardId': cardId,
-                                                },
-                                              )
-                                            : null,
-                                        child: Text(
-                                          cardId.split('_').first.toUpperCase(),
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                              ),
-                            ),
-                          if (action['actionType'] == 'kit_carlson' &&
-                              judgmentChoices.length == 3)
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                              child: FilledButton.tonal(
-                                onPressed: isMyActor
-                                    ? () => _chooseKitCarlson(
+                                  if (isDyingPlayer) const SizedBox(height: 6),
+                                  if (isDyingPlayer)
+                                    OutlinedButton(
+                                      onPressed: () => _callPayload(
                                         context,
-                                        action['id'] as String,
-                                        judgmentChoices,
+                                        'resolveDying',
+                                        {'useBeer': false},
+                                      ),
+                                      child: const Text('BỊ LOẠI'),
+                                    )
+                                  else
+                                    FilledButton(
+                                      onPressed:
+                                          beer == null || playerId == null
+                                          ? null
+                                          : () => _callPayload(
+                                              context,
+                                              'saveDyingPlayer',
+                                              {
+                                                'targetPlayerId':
+                                                    room.dyingPlayerId,
+                                                'cardId': beer,
+                                              },
+                                            ),
+                                      child: const Text('DÙNG BEER'),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    if (isMyTurn &&
+                        activePlayer?.characterId == 'sid_ketchum' &&
+                        activePlayer!.health < activePlayer.maxHealth)
+                      StreamBuilder<List<String>>(
+                        stream: repository.watchHand(room.id),
+                        builder: (context, snapshot) {
+                          final hand = snapshot.data ?? const <String>[];
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: OutlinedButton.icon(
+                              onPressed: hand.length >= 2
+                                  ? () => _useSidKetchum(context, hand)
+                                  : null,
+                              icon: const Icon(Icons.favorite_outline),
+                              label: const Text('SID KETCHUM: BỎ 2 HỒI 1'),
+                            ),
+                          );
+                        },
+                      ),
+                    StreamBuilder<List<Map<String, dynamic>>>(
+                      stream: repository.watchPendingActions(room.id),
+                      builder: (context, snapshot) {
+                        final action = (snapshot.data ?? const []).firstOrNull;
+                        if (action == null) return const SizedBox.shrink();
+                        final opened = List<String>.from(
+                          action['openedCardIds'] as List? ?? const [],
+                        );
+                        final judgmentChoices = List<String>.from(
+                          action['choices'] as List? ?? const [],
+                        );
+                        final responsePlayerId =
+                            action['currentTargetId'] as String? ??
+                            action['targetPlayerId'] as String?;
+                        final isMyResponse =
+                            playerId != null && responsePlayerId == playerId;
+                        final isMyActor =
+                            playerId != null &&
+                            action['actorPlayerId'] == playerId;
+                        final isMyGeneralStorePicker =
+                            playerId != null &&
+                            action['currentPickerId'] == playerId;
+                        return Card(
+                          child: Column(
+                            children: [
+                              ListTile(
+                                leading: action['actionType'] == 'bang'
+                                    ? _ResponseCountdown(
+                                        deadline: action['responseDeadlineAt'],
+                                        // Cloud Functions resolve an expired
+                                        // response. Never apply combat from a
+                                        // widget timer, otherwise reconnects can
+                                        // resolve the same action twice.
+                                        onExpired: () {},
                                       )
                                     : null,
-                                child: const Text('KIT CARLSON: CHỌN 2 LÁ'),
+                                title: Text(
+                                  'Đang chờ: ${action['actionType'] ?? 'phản ứng'}',
+                                ),
+                                subtitle: Text(_actionSummary(room, action)),
+                                trailing: Wrap(
+                                  spacing: 6,
+                                  children: [
+                                    if (action['actionType'] == 'bang')
+                                      FilledButton.tonal(
+                                        onPressed: isMyResponse
+                                            ? () => _callPayload(
+                                                context,
+                                                'acceptBangDamage',
+                                                {
+                                                  'pendingActionId':
+                                                      action['id'],
+                                                },
+                                              )
+                                            : null,
+                                        child: const Text('NHẬN ĐẠN'),
+                                      ),
+                                    if (isMyResponse)
+                                      OutlinedButton(
+                                        onPressed: () => _callPayload(
+                                          context,
+                                          'resolveExpiredResponse',
+                                          {'pendingActionId': action['id']},
+                                        ),
+                                        child: const Text('CHẤP NHẬN'),
+                                      ),
+                                  ],
+                                ),
                               ),
-                            ),
-                          if (isMyResponse &&
-                              (action['actionType'] == 'duello' ||
-                                  action['actionType'] == 'gatling' ||
-                                  action['actionType'] == 'indiani'))
-                            StreamBuilder<List<String>>(
-                              stream: repository.watchHand(room.id),
-                              builder: (context, handSnapshot) {
-                                final requiredType =
-                                    action['actionType'] == 'gatling'
-                                    ? 'dodge_'
-                                    : 'bang_';
-                                final usable =
-                                    (handSnapshot.data ?? const <String>[])
-                                        .where(
-                                          (card) =>
-                                              card.startsWith(requiredType),
-                                        )
-                                        .toList();
-                                final functionName =
-                                    action['actionType'] == 'duello'
-                                    ? 'respondDuel'
-                                    : 'respondMultiAttack';
-                                return Padding(
+                              if (action['actionType'] == 'general_store' &&
+                                  opened.isNotEmpty)
+                                Padding(
                                   padding: const EdgeInsets.fromLTRB(
                                     12,
                                     0,
@@ -1587,50 +1532,34 @@ class OnlineBattleScreen extends StatelessWidget {
                                   ),
                                   child: Wrap(
                                     spacing: 8,
-                                    children: usable
+                                    children: opened
                                         .map(
-                                          (cardId) => FilledButton.tonal(
-                                            onPressed: () => _callPayload(
-                                              context,
-                                              functionName,
-                                              {
-                                                'actionId': action['id'],
-                                                'cardId': cardId,
-                                              },
-                                            ),
+                                          (cardId) => OutlinedButton(
+                                            onPressed: isMyGeneralStorePicker
+                                                ? () => _callPayload(
+                                                    context,
+                                                    'chooseGeneralStoreCard',
+                                                    {
+                                                      'actionId': action['id'],
+                                                      'cardId': cardId,
+                                                    },
+                                                  )
+                                                : null,
                                             child: Text(
-                                              'DÙNG ${cardId.split('_').first.toUpperCase()}',
+                                              cardId
+                                                  .split('_')
+                                                  .first
+                                                  .toUpperCase(),
                                             ),
                                           ),
                                         )
                                         .toList(),
                                   ),
-                                );
-                              },
-                            ),
-                          if (action['actionType'] == 'bang' && isMyResponse)
-                            const Center(child: BangEffectOverlay(size: 130)),
-                          if (action['actionType'] == 'gatling' ||
-                              action['actionType'] == 'indiani')
-                            const Center(
-                              child: AreaAttackEffectOverlay(size: 150),
-                            ),
-                          if (action['actionType'] == 'bang' && isMyResponse)
-                            StreamBuilder<List<String>>(
-                              stream: repository.watchHand(room.id),
-                              builder: (context, handSnapshot) {
-                                final hand =
-                                    handSnapshot.data ?? const <String>[];
-                                final dodges = hand
-                                    .where((card) => card.startsWith('dodge_'))
-                                    .toList();
-                                final requiresTwoDodges =
-                                    (action['requiredDodges'] as num? ?? 1) ==
-                                    2;
-                                final bangs = hand
-                                    .where((card) => card.startsWith('bang_'))
-                                    .toList();
-                                return Padding(
+                                ),
+                              if (action['actionType'] ==
+                                      'lucky_duke_judgment' &&
+                                  judgmentChoices.isNotEmpty)
+                                Padding(
                                   padding: const EdgeInsets.fromLTRB(
                                     12,
                                     0,
@@ -1639,102 +1568,416 @@ class OnlineBattleScreen extends StatelessWidget {
                                   ),
                                   child: Wrap(
                                     spacing: 8,
-                                    runSpacing: 8,
-                                    children: [
-                                      if (requiresTwoDodges)
-                                        FilledButton.tonal(
-                                          onPressed: dodges.length >= 2
-                                              ? () => _resolveSlabDodge(
-                                                  context,
-                                                  action['id'] as String,
-                                                  dodges,
-                                                )
-                                              : null,
-                                          child: const Text('DÙNG 2 LÁ NÉ'),
-                                        )
-                                      else
-                                        ...dodges.map(
+                                    children: judgmentChoices
+                                        .map(
                                           (cardId) => FilledButton.tonal(
-                                            onPressed: () => _callPayload(
-                                              context,
-                                              'respondToAction',
-                                              {
-                                                'pendingActionId': action['id'],
-                                                'responseType': 'missed',
-                                                'cardId': cardId,
-                                              },
+                                            onPressed: isMyActor
+                                                ? () => _callPayload(
+                                                    context,
+                                                    'chooseLuckyDukeJudgment',
+                                                    {
+                                                      'actionId': action['id'],
+                                                      'resultCardId': cardId,
+                                                    },
+                                                  )
+                                                : null,
+                                            child: Text(
+                                              cardId
+                                                  .split('_')
+                                                  .first
+                                                  .toUpperCase(),
                                             ),
-                                            child: const Text('NÉ'),
                                           ),
-                                        ),
-                                      if (!requiresTwoDodges &&
-                                          room
-                                                  .memberFor(playerId)
-                                                  ?.characterId ==
-                                              'calamity_janet')
-                                        ...bangs.map(
-                                          (cardId) => OutlinedButton(
-                                            onPressed: () => _callPayload(
-                                              context,
-                                              'useCalamityJanetDodge',
-                                              {
-                                                'pendingActionId': action['id'],
-                                                'cardId': cardId,
-                                              },
+                                        )
+                                        .toList(),
+                                  ),
+                                ),
+                              if (action['actionType'] == 'kit_carlson' &&
+                                  judgmentChoices.length == 3)
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    12,
+                                    0,
+                                    12,
+                                    12,
+                                  ),
+                                  child: FilledButton.tonal(
+                                    onPressed: isMyActor
+                                        ? () => _chooseKitCarlson(
+                                            context,
+                                            action['id'] as String,
+                                            judgmentChoices,
+                                          )
+                                        : null,
+                                    child: const Text('KIT CARLSON: CHỌN 2 LÁ'),
+                                  ),
+                                ),
+                              if (isMyResponse &&
+                                  (action['actionType'] == 'duello' ||
+                                      action['actionType'] == 'gatling' ||
+                                      action['actionType'] == 'indiani'))
+                                StreamBuilder<List<String>>(
+                                  stream: repository.watchHand(room.id),
+                                  builder: (context, handSnapshot) {
+                                    final requiredType =
+                                        action['actionType'] == 'gatling'
+                                        ? 'dodge_'
+                                        : 'bang_';
+                                    final usable =
+                                        (handSnapshot.data ?? const <String>[])
+                                            .where(
+                                              (card) =>
+                                                  card.startsWith(requiredType),
+                                            )
+                                            .toList();
+                                    final functionName =
+                                        action['actionType'] == 'duello'
+                                        ? 'respondDuel'
+                                        : 'respondMultiAttack';
+                                    return Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        12,
+                                        0,
+                                        12,
+                                        12,
+                                      ),
+                                      child: Wrap(
+                                        spacing: 8,
+                                        children: usable
+                                            .map(
+                                              (cardId) => FilledButton.tonal(
+                                                onPressed: () => _callPayload(
+                                                  context,
+                                                  functionName,
+                                                  {
+                                                    'actionId': action['id'],
+                                                    'cardId': cardId,
+                                                  },
+                                                ),
+                                                child: Text(
+                                                  'DÙNG ${cardId.split('_').first.toUpperCase()}',
+                                                ),
+                                              ),
+                                            )
+                                            .toList(),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              if (action['actionType'] == 'bang' &&
+                                  isMyResponse)
+                                const Center(
+                                  child: BangEffectOverlay(size: 130),
+                                ),
+                              if (action['actionType'] == 'gatling' ||
+                                  action['actionType'] == 'indiani')
+                                const Center(
+                                  child: AreaAttackEffectOverlay(size: 150),
+                                ),
+                              if (action['actionType'] == 'bang' &&
+                                  isMyResponse)
+                                StreamBuilder<List<String>>(
+                                  stream: repository.watchHand(room.id),
+                                  builder: (context, handSnapshot) {
+                                    final hand =
+                                        handSnapshot.data ?? const <String>[];
+                                    final dodges = hand
+                                        .where(
+                                          (card) => card.startsWith('dodge_'),
+                                        )
+                                        .toList();
+                                    final requiresTwoDodges =
+                                        (action['requiredDodges'] as num? ??
+                                            1) ==
+                                        2;
+                                    final bangs = hand
+                                        .where(
+                                          (card) => card.startsWith('bang_'),
+                                        )
+                                        .toList();
+                                    return Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        12,
+                                        0,
+                                        12,
+                                        12,
+                                      ),
+                                      child: Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: [
+                                          if (requiresTwoDodges)
+                                            FilledButton.tonal(
+                                              onPressed: dodges.length >= 2
+                                                  ? () => _resolveSlabDodge(
+                                                      context,
+                                                      action['id'] as String,
+                                                      dodges,
+                                                    )
+                                                  : null,
+                                              child: const Text('DÙNG 2 LÁ NÉ'),
+                                            )
+                                          else
+                                            ...dodges.map(
+                                              (cardId) => FilledButton.tonal(
+                                                onPressed: () => _callPayload(
+                                                  context,
+                                                  'respondToAction',
+                                                  {
+                                                    'pendingActionId':
+                                                        action['id'],
+                                                    'responseType': 'missed',
+                                                    'cardId': cardId,
+                                                  },
+                                                ),
+                                                child: const Text('NÉ'),
+                                              ),
                                             ),
-                                            child: const Text('BANG → NÉ'),
-                                          ),
-                                        ),
-                                      if (!requiresTwoDodges &&
-                                          (room
+                                          if (!requiresTwoDodges &&
+                                              room
                                                       .memberFor(playerId)
                                                       ?.characterId ==
-                                                  'jourdonnais' ||
-                                              room
-                                                  .memberFor(playerId)!
-                                                  .equipment
-                                                  .any(
-                                                    (card) => card.startsWith(
-                                                      'barrel_',
-                                                    ),
-                                                  )))
-                                        OutlinedButton(
-                                          onPressed: () => _callPayload(
-                                            context,
-                                            'resolveJourdonnais',
-                                            {'pendingActionId': action['id']},
-                                          ),
-                                          child: const Text('PHÁN XÉT NÉ'),
-                                        ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
-                        ],
+                                                  'calamity_janet')
+                                            ...bangs.map(
+                                              (cardId) => OutlinedButton(
+                                                onPressed: () => _callPayload(
+                                                  context,
+                                                  'useCalamityJanetDodge',
+                                                  {
+                                                    'pendingActionId':
+                                                        action['id'],
+                                                    'cardId': cardId,
+                                                  },
+                                                ),
+                                                child: const Text('BANG → NÉ'),
+                                              ),
+                                            ),
+                                          if (!requiresTwoDodges &&
+                                              (room
+                                                          .memberFor(playerId)
+                                                          ?.characterId ==
+                                                      'jourdonnais' ||
+                                                  room
+                                                      .memberFor(playerId)!
+                                                      .equipment
+                                                      .any(
+                                                        (card) =>
+                                                            card.startsWith(
+                                                              'barrel_',
+                                                            ),
+                                                      )))
+                                            OutlinedButton(
+                                              onPressed: () => _callPayload(
+                                                context,
+                                                'resolveJourdonnais',
+                                                {
+                                                  'pendingActionId':
+                                                      action['id'],
+                                                },
+                                              ),
+                                              child: const Text('PHÁN XÉT NÉ'),
+                                            ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    if (canDraw)
+                      FilledButton(
+                        onPressed: () => _drawTurn(
+                          context,
+                          playerId,
+                          activePlayer?.characterId,
+                        ),
+                        child: const Text('RÚT 2 LÁ'),
                       ),
-                    );
-                  },
+                    if (canPlay)
+                      FilledButton.tonal(
+                        onPressed: () => _call(context, 'requestEndTurn'),
+                        child: const Text('KẾT THÚC LƯỢT'),
+                      ),
+                    const SizedBox(height: 20),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                if (canDraw)
-                  FilledButton(
-                    onPressed: () =>
-                        _drawTurn(context, playerId, activePlayer?.characterId),
-                    child: const Text('RÚT 2 LÁ'),
-                  ),
-                if (canPlay)
-                  FilledButton.tonal(
-                    onPressed: () => _call(context, 'requestEndTurn'),
-                    child: const Text('KẾT THÚC LƯỢT'),
-                  ),
-                const SizedBox(height: 20),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       );
     },
+  );
+}
+
+/// Fixed hand dock: the player's cards are always visible, including while
+/// the public table is being watched.  The full action panel remains in the
+/// scrollable area for special actions, while this dock handles the usual
+/// select-and-play flow without hiding the hand below the fold.
+class _BattleHandDock extends StatelessWidget {
+  const _BattleHandDock({
+    required this.repository,
+    required this.room,
+    required this.isMyTurn,
+    required this.canPlay,
+    required this.activePlayer,
+    required this.onPlay,
+  });
+
+  final OnlineRoomRepository repository;
+  final OnlineRoom room;
+  final bool isMyTurn;
+  final bool canPlay;
+  final RoomMember? activePlayer;
+  final Future<void> Function(String cardId) onPlay;
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    top: false,
+    child: Container(
+      height: 130,
+      padding: const EdgeInsets.fromLTRB(9, 5, 9, 7),
+      decoration: const BoxDecoration(
+        color: Color(0xee170d09),
+        border: Border(top: BorderSide(color: Color(0xff9a6a35))),
+        boxShadow: [BoxShadow(color: Color(0xbb000000), blurRadius: 12)],
+      ),
+      child: StreamBuilder<List<String>>(
+        stream: repository.watchHand(room.id),
+        builder: (context, snapshot) {
+          final cards = snapshot.data ?? const <String>[];
+          final selectedNotifier = OnlineBattleScreen._selectedHandCard(
+            room.id,
+          );
+          if (selectedNotifier.value != null &&
+              !cards.contains(selectedNotifier.value)) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              selectedNotifier.value = null;
+            });
+          }
+          return ValueListenableBuilder<String?>(
+            valueListenable: selectedNotifier,
+            builder: (context, selectedCardId, _) {
+              final selectedIsBang =
+                  selectedCardId?.startsWith('bang_') ?? false;
+              final unlimitedBang =
+                  activePlayer?.characterId == 'willy_the_kid' ||
+                  activePlayer?.equipment.any(
+                        (card) => card.startsWith('volcanic_'),
+                      ) ==
+                      true;
+              final bangBlocked =
+                  selectedIsBang &&
+                  room.bangUsedThisTurn >= 1 &&
+                  !unlimitedBang;
+              final canConfirm =
+                  selectedCardId != null && canPlay && !bangBlocked;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'BAI CUA BAN  ${cards.length}',
+                        style: const TextStyle(
+                          color: Color(0xffffd272),
+                          fontWeight: FontWeight.w900,
+                          fontSize: 10,
+                          letterSpacing: .5,
+                        ),
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Text(
+                          !isMyTurn
+                              ? 'Dang theo doi luot doi thu'
+                              : canPlay
+                              ? 'Chon 1 la de danh'
+                              : 'Hoan thanh buoc dau luot',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white60,
+                            fontSize: 9,
+                          ),
+                        ),
+                      ),
+                      if (selectedCardId != null)
+                        SizedBox(
+                          height: 25,
+                          child: FilledButton(
+                            onPressed: canConfirm
+                                ? () async {
+                                    final cardId = selectedCardId;
+                                    selectedNotifier.value = null;
+                                    await onPlay(cardId);
+                                  }
+                                : null,
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 9,
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            child: Text(bangBlocked ? 'DA DUNG BANG' : 'DANH'),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Expanded(
+                    child: cards.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'Chua co bai. Den luot hay rut 2 la.',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 11,
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.symmetric(horizontal: 2),
+                            itemCount: cards.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(width: 5),
+                            itemBuilder: (context, index) {
+                              final cardId = cards[index];
+                              final isBang = cardId.startsWith('bang_');
+                              final cardBangBlocked =
+                                  isBang &&
+                                  room.bangUsedThisTurn >= 1 &&
+                                  !unlimitedBang;
+                              return GameCardWidget(
+                                card: _publicGameCard(cardId),
+                                width: 58,
+                                isSelected: cardId == selectedCardId,
+                                isEnabled: canPlay && !cardBangBlocked,
+                                onTap: !canPlay || cardBangBlocked
+                                    ? null
+                                    : () => selectedNotifier.value =
+                                          selectedCardId == cardId
+                                          ? null
+                                          : cardId,
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      ),
+    ),
   );
 }
 
