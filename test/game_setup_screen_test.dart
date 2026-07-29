@@ -25,6 +25,30 @@ void main() {
     await _pumpSetupAtSizes(tester, repository);
   });
 
+  testWidgets('role selection starts with only one face-down card per player', (
+    tester,
+  ) async {
+    final repository = _FakeSetupRepository(
+      PrivateSetupState(
+        phase: 'role_selection',
+        playerId: 'p0',
+        role: null,
+        characterOptions: const [],
+        roleDeck: List.generate(
+          8,
+          (index) => SetupChoice(id: 'r$index', value: ''),
+        ),
+      ),
+    );
+
+    await _pumpSetup(tester, repository, const Size(640, 360));
+
+    expect(find.byKey(const ValueKey('role_card_r0')), findsOneWidget);
+    expect(find.text('CHON 1 LA'), findsNothing);
+    expect(find.text('CHON'), findsNothing);
+    _expectNoScrollOrOverflow(tester);
+  });
+
   testWidgets('setup screen fits eight-player character deck without scroll', (
     tester,
   ) async {

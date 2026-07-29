@@ -57,6 +57,15 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
           final hasPickedRole =
               state?.roleDeck.any((card) => card.pickedBy == state.playerId) ??
               false;
+          final isPickingRole = state != null && isRoleStep && !hasPickedRole;
+          final isPickingCharacter =
+              state != null &&
+              isCharacterStep &&
+              state.characterOptions.length < 2;
+          final showCenterStage =
+              state == null ||
+              (!isPickingRole && !isPickingCharacter) ||
+              phase == 'choosing_character';
 
           return LayoutBuilder(
             builder: (context, constraints) {
@@ -87,37 +96,38 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                       deadline: state?.selectionDeadlineAt,
                     ),
                   ),
-                  Positioned.fill(
-                    top: 34,
-                    bottom: 8,
-                    child: state == null
-                        ? const Center(child: CircularProgressIndicator())
-                        : _SetupCenterStage(
-                            phase: phase,
-                            role: selectedRole,
-                            selectedCharacterId: selectedCharacter,
-                            submitted: state.submitted,
-                            finalCharacterIds:
-                                state.characterOptions.length >= 2
-                                ? state.characterOptions
-                                : const [],
-                            canConfirmCharacter:
-                                selectedCharacter != null &&
-                                !state.submitted &&
-                                state.characterOptions.contains(
-                                  selectedCharacter,
-                                ),
-                            onConfirmCharacter: selectedCharacter == null
-                                ? null
-                                : () => widget.repository.chooseCharacter(
-                                    widget.room.id,
+                  if (showCenterStage)
+                    Positioned.fill(
+                      top: 34,
+                      bottom: 8,
+                      child: state == null
+                          ? const Center(child: CircularProgressIndicator())
+                          : _SetupCenterStage(
+                              phase: phase,
+                              role: selectedRole,
+                              selectedCharacterId: selectedCharacter,
+                              submitted: state.submitted,
+                              finalCharacterIds:
+                                  state.characterOptions.length >= 2
+                                  ? state.characterOptions
+                                  : const [],
+                              canConfirmCharacter:
+                                  selectedCharacter != null &&
+                                  !state.submitted &&
+                                  state.characterOptions.contains(
                                     selectedCharacter,
-                                    '${DateTime.now().microsecondsSinceEpoch}_$selectedCharacter',
                                   ),
-                            onInspectCharacter: (id) =>
-                                setState(() => _inspectedCharacterId = id),
-                          ),
-                  ),
+                              onConfirmCharacter: selectedCharacter == null
+                                  ? null
+                                  : () => widget.repository.chooseCharacter(
+                                      widget.room.id,
+                                      selectedCharacter,
+                                      '${DateTime.now().microsecondsSinceEpoch}_$selectedCharacter',
+                                    ),
+                              onInspectCharacter: (id) =>
+                                  setState(() => _inspectedCharacterId = id),
+                            ),
+                    ),
                   if (state != null)
                     Positioned.fill(
                       top: 42,
@@ -126,10 +136,8 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                         ignoring:
                             _pendingRoleCardId != null ||
                             _pendingCharacterCardId != null ||
-                            !((isRoleStep && !hasPickedRole) ||
-                                (isCharacterStep &&
-                                    state.characterOptions.length < 2)),
-                        child: isRoleStep && !hasPickedRole
+                            !(isPickingRole || isPickingCharacter),
+                        child: isPickingRole
                             ? _RoleDeck(
                                 cards: state.roleDeck,
                                 playerCount: widget.room.members.length,
@@ -139,8 +147,7 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                                 onPick: (cardId) =>
                                     setState(() => _pendingRoleCardId = cardId),
                               )
-                            : isCharacterStep &&
-                                  state.characterOptions.length < 2
+                            : isPickingCharacter
                             ? _CharacterDeck(
                                 cards: state.characterDeck,
                                 playerId: state.playerId,
@@ -585,16 +592,21 @@ class _RoleDeck extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final visibleCards = cards.isEmpty
-        ? _setupRoleDeck(playerCount)
-              .asMap()
-              .entries
-              .map(
-                (entry) =>
-                    SetupChoice(id: 'preview_${entry.key}', value: entry.value),
-              )
-              .toList()
-        : cards;
+    final visibleCards =
+        (cards.isEmpty
+                ? _setupRoleDeck(playerCount)
+                      .asMap()
+                      .entries
+                      .map(
+                        (entry) => SetupChoice(
+                          id: 'preview_${entry.key}',
+                          value: entry.value,
+                        ),
+                      )
+                      .toList()
+                : cards)
+            .take(playerCount.clamp(1, 8))
+            .toList();
     return LayoutBuilder(
       builder: (context, constraints) {
         final cardWidth = (constraints.maxWidth / visibleCards.length - 6)
