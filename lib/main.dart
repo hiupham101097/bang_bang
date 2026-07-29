@@ -4,14 +4,17 @@ import 'package:bangbang/game_engine.dart';
 import 'package:bangbang/audio_service.dart';
 import 'package:bangbang/game_card_widget.dart';
 import 'package:bangbang/data/cloudflare_match_repository.dart';
+import 'package:bangbang/config/game_backend.dart';
 import 'package:bangbang/data/online_room_repository.dart';
 import 'package:bangbang/online_lobby.dart';
 import 'package:bangbang/splash_screen.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
@@ -21,7 +24,7 @@ void main() async {
 
 class BangBangApp extends StatelessWidget {
   const BangBangApp({super.key});
-  static const _matchUrl = String.fromEnvironment('CLOUDFLARE_MATCH_URL');
+  static const _matchUrl = cloudflareMatchUrl;
   static final OnlineRoomRepository _rooms = _matchUrl.isNotEmpty
       ? CloudflareMatchRepository(_matchUrl)
       : const UnavailableOnlineRoomRepository(

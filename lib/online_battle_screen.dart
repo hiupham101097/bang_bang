@@ -928,10 +928,11 @@ class OnlineBattleScreen extends StatelessWidget {
       final isMyTurn = playerId != null && playerId == room.currentTurnPlayerId;
       final canPlay = isMyTurn && room.phase == 'play_phase';
       final phase = room.phase;
-      final needsJudgment = room.judgmentsResolvedForTurn != room.turnNumber;
-      final canResolveJudgment =
-          isMyTurn && phase == 'turn_start' && needsJudgment;
-      final canDraw = isMyTurn && phase == 'turn_start' && !needsJudgment;
+      // The authoritative Worker resolves Dynamite/Jail during the draw
+      // command. Do not keep the old Firebase-only gate here, otherwise the
+      // player can be stuck at TURN_START forever.
+      const canResolveJudgment = false;
+      final canDraw = isMyTurn && phase == 'turn_start';
       return Scaffold(
         backgroundColor: const Color(0xff160c08),
         appBar: AppBar(
@@ -1641,7 +1642,11 @@ class OnlineBattleScreen extends StatelessWidget {
                                             child: const Text('NÉ'),
                                           ),
                                         ),
-                                      if (!requiresTwoDodges)
+                                      if (!requiresTwoDodges &&
+                                          room
+                                                  .memberFor(playerId)
+                                                  ?.characterId ==
+                                              'calamity_janet')
                                         ...bangs.map(
                                           (cardId) => OutlinedButton(
                                             onPressed: () => _callPayload(
@@ -1655,7 +1660,19 @@ class OnlineBattleScreen extends StatelessWidget {
                                             child: const Text('BANG → NÉ'),
                                           ),
                                         ),
-                                      if (!requiresTwoDodges)
+                                      if (!requiresTwoDodges &&
+                                          (room
+                                                      .memberFor(playerId)
+                                                      ?.characterId ==
+                                                  'jourdonnais' ||
+                                              room
+                                                  .memberFor(playerId)!
+                                                  .equipment
+                                                  .any(
+                                                    (card) => card.startsWith(
+                                                      'barrel_',
+                                                    ),
+                                                  )))
                                         OutlinedButton(
                                           onPressed: () => _callPayload(
                                             context,
@@ -1756,6 +1773,8 @@ class _CentralActionArea extends StatelessWidget {
             latestPublicLog: room.publicLog.isEmpty
                 ? null
                 : room.publicLog.last,
+            turnDeadlineAt: room.turnDeadlineAt,
+            pendingAction: action,
           ),
           const SizedBox(height: 4),
           Row(
@@ -1965,11 +1984,15 @@ class _PlayerTable extends StatelessWidget {
     required this.members,
     required this.currentTurnPlayerId,
     required this.latestPublicLog,
+    required this.turnDeadlineAt,
+    this.pendingAction,
   });
 
   final List<RoomMember> members;
   final String? currentTurnPlayerId;
   final String? latestPublicLog;
+  final DateTime? turnDeadlineAt;
+  final Map<String, dynamic>? pendingAction;
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -1986,6 +2009,16 @@ class _PlayerTable extends StatelessWidget {
         );
         const radiusY = 58.0;
         final bang = _bangEvent(latestPublicLog);
+        final pendingBang = pendingAction?['actionType'] == 'bang';
+        final pendingActorId = pendingAction == null
+            ? null
+            : pendingAction!['actorPlayerId'] as String?;
+        final pendingTargetId = pendingAction == null
+            ? null
+            : pendingAction!['currentTargetId'] as String?;
+        final pendingActionId = pendingAction == null
+            ? null
+            : pendingAction!['id'] as String?;
         return Stack(
           clipBehavior: Clip.none,
           children: [
@@ -2030,9 +2063,14 @@ class _PlayerTable extends StatelessWidget {
                   child: _PlayerSeat(
                     member: member,
                     isCurrent: member.id == currentTurnPlayerId,
-                    isBangShooter: member.id == bang?.shooterId,
-                    isBangTarget: member.id == bang?.targetId,
-                    bangEventId: bang?.id,
+                    isBangShooter: pendingBang
+                        ? member.id == pendingActorId
+                        : member.id == bang?.shooterId,
+                    isBangTarget: pendingBang
+                        ? member.id == pendingTargetId
+                        : member.id == bang?.targetId,
+                    bangEventId: pendingBang ? pendingActionId : bang?.id,
+                    turnDeadlineAt: turnDeadlineAt,
                   ),
                 );
               }(),
@@ -2049,6 +2087,7 @@ class _PlayerSeat extends StatefulWidget {
     required this.isCurrent,
     required this.isBangShooter,
     required this.isBangTarget,
+    required this.turnDeadlineAt,
     this.bangEventId,
   });
 
@@ -2056,6 +2095,7 @@ class _PlayerSeat extends StatefulWidget {
   final bool isCurrent;
   final bool isBangShooter;
   final bool isBangTarget;
+  final DateTime? turnDeadlineAt;
   final String? bangEventId;
 
   @override
@@ -2172,6 +2212,15 @@ class _PlayerSeatState extends State<_PlayerSeat> {
                         color: Colors.white70,
                       ),
                     ),
+                    if (active)
+                      Text(
+                        _seatCountdown(widget.turnDeadlineAt),
+                        style: const TextStyle(
+                          color: Color(0xffffd272),
+                          fontSize: 8,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                     if (member.equipment.isNotEmpty)
                       Text(
                         member.equipment.take(2).map(_cardLabel).join(' · '),
@@ -2469,6 +2518,10 @@ String _actionSummary(OnlineRoom room, Map<String, dynamic> action) {
 }
 
 String _publicLogLabel(OnlineRoom room, String entry) {
+  // Durable Objects already write a complete Vietnamese sentence. Older
+  // Firebase events used colon-delimited records, which are kept below for
+  // backward compatibility only.
+  if (!entry.contains(':')) return entry;
   final parts = entry.split(':');
   final actor = room.memberFor(parts.length > 1 ? parts[1] : '');
   final actorName = actor?.displayName ?? 'Một người chơi';
@@ -2522,6 +2575,12 @@ String _publicLogLabel(OnlineRoom room, String entry) {
   return target == null
       ? '$actorName đã dùng $card.'
       : '$actorName dùng $card vào ${target.displayName}.';
+}
+
+String _seatCountdown(DateTime? deadline) {
+  if (deadline == null) return 'ĐANG ĐỒNG BỘ...';
+  final seconds = deadline.difference(DateTime.now()).inSeconds.clamp(0, 99);
+  return '⏱ ${seconds}s';
 }
 
 int _distanceBetween(OnlineRoom room, String actorId, String targetId) {
@@ -2604,7 +2663,7 @@ class _TurnSteps extends StatelessWidget {
         : phase == 'play_phase'
         ? 1
         : 2;
-    const labels = ['1. RÚT BÀI', '2. ĐÁNH 1 LÁ', '3. KẾT THÚC'];
+    const labels = ['1. RÚT BÀI', '2. ĐÁNH BÀI', '3. KẾT THÚC'];
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

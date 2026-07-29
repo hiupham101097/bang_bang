@@ -19,6 +19,7 @@ type Command =
   | "draw"
   | "play"
   | "respond_bang"
+  | "choose_general_store"
   | "sid_ketchum"
   | "end_turn"
   | "discard";
@@ -32,14 +33,16 @@ interface Player {
 }
 interface PendingBang {
   id: string; actorId: string; targetId: string; deadline: number; requiredDodges: number;
-  actionType?: "bang" | "gatling" | "indiani" | "duello";
+  actionType?: "bang" | "gatling" | "indiani" | "duello" | "general_store";
   requiredCardType?: "dodge" | "bang";
   targets?: string[]; targetIndex?: number; duelPlayerA?: string; duelPlayerB?: string;
+  openedCardIds?: string[]; pickerOrder?: string[]; pickerIndex?: number; currentPickerId?: string;
 }
 interface MatchState {
   id: string; code: string; hostId: string; maxPlayers: number; turnDurationSeconds: number;
   status: "waiting" | "starting" | "playing" | "finished"; phase: Phase; players: Player[];
   deck: string[]; discard: string[]; currentTurnPlayerId?: string; turnNumber: number;
+  turnDeadline?: number;
   bangUsedThisTurn: number; publicLog: string[]; pendingBang?: PendingBang; winner?: string;
 }
 
@@ -63,7 +66,7 @@ const deck = () => {
     ...Array(3).fill("panico"), ...Array(3).fill("cat_balou"), ...Array(2).fill("dilizenza"),
     "wells_fargo", ...Array(2).fill("general_store"), ...Array(2).fill("duello"), "gatling",
     ...Array(2).fill("indiani"), "saloon", "barrel", "jail", "dynamite", "volcanic",
-    "gun_range_2", "gun_range_3", "gun_range_4", "gun_range_5", "mustang", "appaloosa",
+    "gun_range_2", "gun_range_3", "gun_range_4", "gun_range_5", "mustang", "appaloosa", "bang",
   ];
   const ranks = ["ace", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "jack", "queen", "king"];
   const suits = ["spade", "club", "diamond", "heart"];
@@ -180,11 +183,17 @@ export class BangBangMatch extends DurableObject<Env> {
     const state = await this.load();
     if (state.phase === "waiting_response" && state.pendingBang && Date.now() >= state.pendingBang.deadline) {
       const pending = state.pendingBang;
-      this.damage(state, pending.targetId, pending.actorId, "Không phản ứng kịp");
-      this.advancePendingResponse(state, pending);
+      if (pending.actionType === "general_store") {
+        const card = pending.openedCardIds?.[0];
+        if (card) this.chooseGeneralStore(state, pending.currentPickerId ?? pending.targetId, card);
+      } else {
+        this.damage(state, pending.targetId, pending.actorId, "Không phản ứng kịp");
+        if (pending.actionType === "duello") this.finishPendingResponse(state, pending);
+        else this.advancePendingResponse(state, pending);
+      }
       await this.save(state);
     } else if (state.status === "playing" && state.phase !== "waiting_response") {
-      await this.advanceTurn(state, "Hết giờ");
+      await this.resolveTurnTimeout(state);
     }
   }
 
@@ -194,7 +203,7 @@ export class BangBangMatch extends DurableObject<Env> {
     if (existing) return fail("Mã phòng trùng, hãy tạo lại.", 409);
     const maxPlayers = Math.max(4, Math.min(8, Number(data.maxPlayers || 4)));
     const host: Player = { id: data.user.id, name: data.user.name, seat: 0, bot: false, ready: false, alive: true, health: 0, maxHealth: 0, cardCount: 0, hand: [], equipment: [], attackRange: 1 };
-    const state: MatchState = { id: data.code, code: data.code, hostId: host.id, maxPlayers, turnDurationSeconds: Math.max(20, Number(data.turnDurationSeconds || 45)), status: "waiting", phase: "lobby", players: [host], deck: [], discard: [], turnNumber: 0, bangUsedThisTurn: 0, publicLog: ["Phòng đã được tạo."] };
+    const state: MatchState = { id: data.code, code: data.code, hostId: host.id, maxPlayers, turnDurationSeconds: Math.max(20, Number(data.turnDurationSeconds || 60)), status: "waiting", phase: "lobby", players: [host], deck: [], discard: [], turnNumber: 0, bangUsedThisTurn: 0, publicLog: ["Phòng đã được tạo."] };
     await this.save(state);
     return json({ room: this.snapshot(state, data.user.id) }, 201);
   }
@@ -237,9 +246,10 @@ export class BangBangMatch extends DurableObject<Env> {
         state.players.forEach((item, index) => item.seat = index);
       } else if (command.action === "start") this.start(state, user.id);
       else if (command.action === "choose_character") this.chooseCharacter(state, user.id, String(payload.characterId || ""));
-      else if (command.action === "draw") this.draw(state, user.id);
+      else if (command.action === "draw") this.draw(state, user.id, String(payload.targetPlayerId || ""));
       else if (command.action === "play") this.play(state, user.id, String(payload.cardId || ""), String(payload.targetPlayerId || ""), payload);
-      else if (command.action === "respond_bang") this.respondBang(state, user.id, String(payload.response || "damage"), String(payload.cardId || ""));
+      else if (command.action === "respond_bang") this.respondBang(state, user.id, String(payload.response || "damage"), String(payload.cardId || ""), Array.isArray(payload.cardIds) ? payload.cardIds.map(String) : []);
+      else if (command.action === "choose_general_store") this.chooseGeneralStore(state, user.id, String(payload.cardId || ""));
       else if (command.action === "sid_ketchum") this.useSidKetchum(state, user.id, Array.isArray(payload.cardIds) ? payload.cardIds.map(String) : []);
       else if (command.action === "end_turn") await this.endTurn(state, user.id);
       else if (command.action === "discard") this.discardCards(state, user.id, Array.isArray(payload.cardIds) ? payload.cardIds.map(String) : []);
@@ -284,11 +294,12 @@ export class BangBangMatch extends DurableObject<Env> {
     state.deck = cards.slice(cursor); state.discard = []; state.status = "playing"; state.phase = "turn_start";
     state.currentTurnPlayerId = state.players.find((player) => player.role === "sheriff")!.id;
     state.turnNumber = 1; state.bangUsedThisTurn = 0; state.publicLog.push("Trận đấu bắt đầu.");
-    void this.ctx.storage.setAlarm(Date.now() + state.turnDurationSeconds * 1000);
+    state.turnDeadline = Date.now() + state.turnDurationSeconds * 1000;
+    void this.ctx.storage.setAlarm(state.turnDeadline);
     this.runBotTurn(state);
   }
 
-  private draw(state: MatchState, userId: string): void {
+  private draw(state: MatchState, userId: string, jesseTargetId = ""): void {
     this.requireTurn(state, userId, "turn_start");
     const player = this.player(state, userId);
     if (this.resolveTurnJudgments(state, player)) return;
@@ -298,8 +309,8 @@ export class BangBangMatch extends DurableObject<Env> {
       cards.push(...peek.slice(0, 2));
       if (peek[2]) state.deck.unshift(peek[2]);
       state.publicLog.push(`${player.name} xem 3 lá và chọn 2.`);
-    } else if (player.characterId === "jesse_jones") {
-      const victim = state.players.find((candidate) => candidate.alive && candidate.id !== player.id && candidate.hand.length > 0);
+    } else if (player.characterId === "jesse_jones" && jesseTargetId) {
+      const victim = state.players.find((candidate) => candidate.alive && candidate.id === jesseTargetId && candidate.hand.length > 0);
       if (victim) {
         const stolen = victim.hand.splice(crypto.getRandomValues(new Uint32Array(1))[0] % victim.hand.length, 1)[0];
         victim.cardCount = victim.hand.length; cards.push(stolen);
@@ -337,11 +348,14 @@ export class BangBangMatch extends DurableObject<Env> {
       state.publicLog.push(`${actor.name} dùng Saloon, mọi người hồi 1 máu.`);
     } else if (type === "mustang" || type === "appaloosa" || type === "volcanic") {
       actor.hand.splice(at, 1); actor.cardCount = actor.hand.length;
-      actor.equipment = [...actor.equipment.filter((card) => typeOf(card) !== type), cardId];
+      const replaced = actor.equipment.filter((card) => type === "volcanic" ? this.isWeapon(card) : typeOf(card) === type);
+      actor.equipment = [...actor.equipment.filter((card) => !replaced.includes(card)), cardId];
+      state.discard.push(...replaced); this.refreshAttackRange(actor);
       state.publicLog.push(`${actor.name} trang bị ${type}.`);
     } else if (type === "panico" || type === "cat") {
       const target = this.player(state, targetId);
       if (!targetId || target.id === actor.id || !target.alive) throw Error("Cần chọn mục tiêu còn sống.");
+      if (type === "panico" && this.distance(state, actor, target) > 1) throw Error("Panico chỉ dùng ở khoảng cách 1.");
       const equipmentCardId = typeof payload.equipmentCardId === "string" ? payload.equipmentCardId : "";
       let taken: string | undefined;
       if (equipmentCardId) {
@@ -352,13 +366,24 @@ export class BangBangMatch extends DurableObject<Env> {
       }
       if (!taken) throw Error("Mục tiêu không còn bài hoặc trang bị.");
       actor.hand.splice(at, 1); actor.cardCount = actor.hand.length; target.cardCount = target.hand.length; state.discard.push(cardId);
+      this.refreshAttackRange(target);
       if (type === "panico") { actor.hand.push(taken); actor.cardCount = actor.hand.length; state.publicLog.push(`${actor.name} cướp 1 lá của ${target.name}.`); }
       else { state.discard.push(taken); state.publicLog.push(`${actor.name} phá 1 lá của ${target.name}.`); }
     } else if (type === "general") {
       actor.hand.splice(at, 1); actor.cardCount = actor.hand.length; state.discard.push(cardId);
-      const opened = state.deck.splice(0, state.players.filter((player) => player.alive).length);
-      const picked = opened.shift(); if (picked) actor.hand.push(picked); actor.cardCount = actor.hand.length;
-      state.discard.push(...opened); state.publicLog.push(`${actor.name} mở General Store và chọn 1 lá.`);
+      const pickerOrder = this.aliveOrderFrom(state, actor.id).map((player) => player.id);
+      const openedCardIds = state.deck.splice(0, pickerOrder.length);
+      if (openedCardIds.length === 0) throw Error("Bộ bài đã hết.");
+      state.phase = "waiting_response";
+      state.pendingBang = {
+        id: crypto.randomUUID(), actorId: actor.id, targetId: actor.id,
+        deadline: Date.now() + 30000, requiredDodges: 0,
+        actionType: "general_store", openedCardIds, pickerOrder, pickerIndex: 0,
+        currentPickerId: actor.id,
+      };
+      state.publicLog.push(`${actor.name} mở General Store.`);
+      void this.ctx.storage.setAlarm(state.pendingBang.deadline);
+      this.runBotResponse(state);
     } else if (type === "gatling" || type === "indiani") {
       actor.hand.splice(at, 1); actor.cardCount = actor.hand.length; state.discard.push(cardId);
       const targets = state.players.filter((player) => player.alive && player.id !== actor.id).map((player) => player.id);
@@ -376,7 +401,10 @@ export class BangBangMatch extends DurableObject<Env> {
       state.publicLog.push(`${actor.name} thách đấu ${target.name}.`); void this.ctx.storage.setAlarm(state.pendingBang.deadline);
       this.runBotResponse(state);
     } else if (type.startsWith("gun_range")) {
-      actor.hand.splice(at, 1); actor.cardCount = actor.hand.length; actor.equipment = [...actor.equipment.filter((card) => !card.startsWith("gun_range")), cardId]; actor.attackRange = Number(type.at(-1) || 1); state.publicLog.push(`${actor.name} trang bị súng.`);
+      actor.hand.splice(at, 1); actor.cardCount = actor.hand.length;
+      const replaced = actor.equipment.filter((card) => this.isWeapon(card));
+      actor.equipment = [...actor.equipment.filter((card) => !replaced.includes(card)), cardId];
+      state.discard.push(...replaced); this.refreshAttackRange(actor); state.publicLog.push(`${actor.name} trang bị súng.`);
     } else if (type === "barrel") {
       actor.hand.splice(at, 1); actor.cardCount = actor.hand.length;
       actor.equipment = [...actor.equipment.filter((card) => typeOf(card) !== "barrel"), cardId];
@@ -394,12 +422,12 @@ export class BangBangMatch extends DurableObject<Env> {
     } else throw Error("Thẻ này sẽ được mở ở bước hiệu ứng nâng cao.");
   }
 
-  private respondBang(state: MatchState, userId: string, response: string, cardId: string): void {
+  private respondBang(state: MatchState, userId: string, response: string, cardId: string, cardIds: string[] = []): void {
     const pending = state.pendingBang;
     if (!pending || pending.targetId !== userId || state.phase !== "waiting_response") throw Error("Không có phản ứng hợp lệ.");
     const target = this.player(state, userId);
     const required = pending.requiredCardType ?? "dodge";
-    if (response !== "dodge" && this.hasHeartJudgmentDodge(state, target)) {
+    if (pending.actionType === "bang" && response !== "dodge" && this.hasHeartJudgmentDodge(state, target)) {
       state.publicLog.push(`${target.name} tự Né nhờ Barrel/kỹ năng.`);
       this.advancePendingResponse(state, pending); return;
     }
@@ -407,7 +435,8 @@ export class BangBangMatch extends DurableObject<Env> {
       const valid = (card: string) => typeOf(card) === required || (required === "dodge" && target.characterId === "calamity_janet" && typeOf(card) === "bang");
       const cards = target.hand.filter(valid);
       if (cards.length < pending.requiredDodges) throw Error("Không đủ bài phản ứng.");
-      const spent = pending.requiredDodges === 1 ? [cardId] : cards.slice(0, 2);
+      const spent = pending.requiredDodges === 1 ? [cardId] : cardIds;
+      if (spent.length !== pending.requiredDodges || new Set(spent).size !== spent.length) throw Error("Cần chọn đúng số lá phản ứng.");
       if (spent.some((card) => !target.hand.includes(card) || !valid(card))) throw Error("Lá phản ứng không hợp lệ.");
       target.hand = target.hand.filter((card) => !spent.includes(card));
       target.cardCount = target.hand.length; state.discard.push(...spent);
@@ -415,7 +444,29 @@ export class BangBangMatch extends DurableObject<Env> {
       this.advancePendingResponse(state, pending); return;
     }
     this.damage(state, target.id, pending.actorId, pending.actionType ?? "bang");
-    this.advancePendingResponse(state, pending);
+    if (pending.actionType === "duello") this.finishPendingResponse(state, pending);
+    else this.advancePendingResponse(state, pending);
+  }
+  private chooseGeneralStore(state: MatchState, userId: string, cardId: string): void {
+    const pending = state.pendingBang;
+    if (!pending || pending.actionType !== "general_store" || pending.currentPickerId !== userId) throw Error("Chưa đến lượt chọn ở General Store.");
+    const opened = pending.openedCardIds ?? [];
+    const cardIndex = opened.indexOf(cardId);
+    if (cardIndex < 0) throw Error("Lá này không còn trong General Store.");
+    opened.splice(cardIndex, 1);
+    const player = this.player(state, userId);
+    player.hand.push(cardId); player.cardCount = player.hand.length;
+    const nextIndex = (pending.pickerIndex ?? 0) + 1;
+    const nextId = pending.pickerOrder?.[nextIndex];
+    if (nextId && opened.length > 0) {
+      pending.openedCardIds = opened; pending.pickerIndex = nextIndex;
+      pending.currentPickerId = nextId; pending.targetId = nextId;
+      pending.deadline = Date.now() + 30000; state.pendingBang = pending;
+      void this.ctx.storage.setAlarm(pending.deadline); this.runBotResponse(state); return;
+    }
+    state.discard.push(...opened);
+    state.publicLog.push("General Store kết thúc.");
+    this.finishPendingResponse(state, pending);
   }
   private advancePendingResponse(state: MatchState, pending: PendingBang): void {
     if (pending.actionType === "duello") {
@@ -431,17 +482,28 @@ export class BangBangMatch extends DurableObject<Env> {
         if (next.alive) { pending.targetIndex = index; pending.targetId = next.id; pending.deadline = Date.now() + 10000; state.pendingBang = pending; void this.ctx.storage.setAlarm(pending.deadline); this.runBotResponse(state); return; }
       }
     }
+    this.finishPendingResponse(state, pending);
+  }
+  private finishPendingResponse(state: MatchState, pending: PendingBang): void {
     state.pendingBang = undefined;
-    if (state.status === "playing") state.phase = "play_phase";
+    if (state.status !== "playing") return;
+    state.phase = "play_phase";
+    const actor = this.player(state, pending.actorId);
+    if (actor.bot && state.currentTurnPlayerId === actor.id) void this.advanceTurn(state, "Bot kết thúc lượt");
   }
   private runBotResponse(state: MatchState): void {
     const pending = state.pendingBang;
     if (!pending) return;
     const bot = this.player(state, pending.targetId);
     if (!bot.bot) return;
+    if (pending.actionType === "general_store") {
+      const card = pending.openedCardIds?.[0];
+      if (card) this.chooseGeneralStore(state, bot.id, card);
+      return;
+    }
     const required = pending.requiredCardType ?? "dodge";
     const cards = bot.hand.filter((card) => typeOf(card) === required || (required === "dodge" && bot.characterId === "calamity_janet" && typeOf(card) === "bang"));
-    this.respondBang(state, bot.id, cards.length >= pending.requiredDodges ? "card" : "damage", cards[0] ?? "");
+    this.respondBang(state, bot.id, cards.length >= pending.requiredDodges ? "card" : "damage", cards[0] ?? "", cards.slice(0, pending.requiredDodges));
   }
   private useSidKetchum(state: MatchState, userId: string, cardIds: string[]): void {
     this.requireTurn(state, userId, "play_phase");
@@ -477,6 +539,7 @@ export class BangBangMatch extends DurableObject<Env> {
     const jail = player.equipment.find((card) => typeOf(card) === "jail");
     if (jail) {
       player.equipment = player.equipment.filter((card) => card !== jail);
+      state.discard.push(jail);
       const card = this.judge(state, player, (value) => this.isHeart(value));
       if (!this.isHeart(card)) {
         state.publicLog.push(`${player.name} không thoát Jail và mất lượt.`);
@@ -494,6 +557,7 @@ export class BangBangMatch extends DurableObject<Env> {
         (value) => !(value.endsWith("_spade") && /_(two|three|four|five|six|seven|eight|nine)_spade$/.test(value)),
       );
       if (card?.endsWith("_spade") && /_(two|three|four|five|six|seven|eight|nine)_spade$/.test(card)) {
+        state.discard.push(dynamite);
         player.health -= 3; state.publicLog.push(`Dynamite nổ: ${player.name} mất 3 máu.`);
         if (player.health <= 0) {
           player.alive = false; player.hand = []; player.equipment = []; player.cardCount = 0;
@@ -516,9 +580,27 @@ export class BangBangMatch extends DurableObject<Env> {
     player.hand = player.hand.filter((card) => !cards.includes(card)); player.cardCount = player.hand.length; state.discard.push(...cards); state.phase = "turn_start"; void this.advanceTurn(state, "Bỏ bài");
   }
 
+  private async resolveTurnTimeout(state: MatchState): Promise<void> {
+    const currentId = state.currentTurnPlayerId;
+    if (!currentId) return;
+    if (state.phase === "turn_start") {
+      this.draw(state, currentId);
+      if ((state.phase as Phase) !== "play_phase") return;
+    }
+    const player = this.player(state, currentId);
+    const excess = Math.max(0, player.hand.length - player.health);
+    if (excess > 0) {
+      const discarded = shuffle(player.hand).slice(0, excess);
+      player.hand = player.hand.filter((card) => !discarded.includes(card));
+      player.cardCount = player.hand.length;
+      state.discard.push(...discarded);
+      state.publicLog.push(`${player.name} hết giờ và bỏ ${discarded.length} lá dư.`);
+    }
+    await this.advanceTurn(state, "Hết giờ");
+  }
   private async advanceTurn(state: MatchState, reason: string): Promise<void> {
     const alive = state.players.filter((player) => player.alive).sort((a, b) => a.seat - b.seat); const index = alive.findIndex((player) => player.id === state.currentTurnPlayerId);
-    state.currentTurnPlayerId = alive[(index + 1) % alive.length].id; state.turnNumber++; state.bangUsedThisTurn = 0; state.phase = "turn_start"; state.publicLog.push(reason); void this.ctx.storage.setAlarm(Date.now() + state.turnDurationSeconds * 1000); this.runBotTurn(state);
+    state.currentTurnPlayerId = alive[(index + 1) % alive.length].id; state.turnNumber++; state.bangUsedThisTurn = 0; state.phase = "turn_start"; state.publicLog.push(reason); state.turnDeadline = Date.now() + state.turnDurationSeconds * 1000; void this.ctx.storage.setAlarm(state.turnDeadline); this.runBotTurn(state);
   }
   private runBotTurn(state: MatchState): void {
     const bot = state.players.find((player) => player.id === state.currentTurnPlayerId);
@@ -566,6 +648,20 @@ export class BangBangMatch extends DurableObject<Env> {
     const index = alive.findIndex((player) => player.id === currentId);
     return alive[(index + 1) % alive.length];
   }
+  private aliveOrderFrom(state: MatchState, firstId: string): Player[] {
+    const alive = state.players.filter((player) => player.alive).sort((a, b) => a.seat - b.seat);
+    const index = alive.findIndex((player) => player.id === firstId);
+    if (index < 0) return alive;
+    return [...alive.slice(index), ...alive.slice(0, index)];
+  }
+  private isWeapon(cardId: string): boolean {
+    const type = typeOf(cardId);
+    return type === "volcanic" || type.startsWith("gun_range");
+  }
+  private refreshAttackRange(player: Player): void {
+    const gun = player.equipment.find((card) => typeOf(card).startsWith("gun_range"));
+    player.attackRange = gun ? Number(typeOf(gun).at(-1) || 1) : 1;
+  }
   private distance(state: MatchState, actor: Player, target: Player): number {
     const alive = state.players.filter((player) => player.alive);
     const a = alive.indexOf(actor), b = alive.indexOf(target);
@@ -609,7 +705,9 @@ export class BangBangMatch extends DurableObject<Env> {
   private snapshot(state: MatchState, userId: string) { const me = state.players.find((player) => player.id === userId); return { ...state, deck: undefined, players: state.players.map(({ hand, role, characterOptions, characterChosen, ...player }) => ({ ...player, revealedRole: role === "sheriff" ? role : undefined, role: player.id === userId ? role : undefined, hand: player.id === userId ? hand : undefined, characterOptions: player.id === userId ? characterOptions : undefined, characterChosen: player.id === userId ? characterChosen : undefined })), hand: me?.hand ?? [] }; }
 }
 
-async function sign(user: User, secret: string): Promise<string> { const payload = btoa(JSON.stringify({ ...user, exp: Date.now() + 1000 * 60 * 60 * 24 * 30 })); return `${payload}.${await signatureFor(payload, secret)}`; }
+async function sign(user: User, secret: string): Promise<string> { const payload = textToBase64(JSON.stringify({ ...user, exp: Date.now() + 1000 * 60 * 60 * 24 * 30 })); return `${payload}.${await signatureFor(payload, secret)}`; }
 async function signatureFor(payload: string, secret: string): Promise<string> { const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]); const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload)); return toBase64(new Uint8Array(signature)); }
-async function authenticate(request: Request, secret: string): Promise<User | null> { const token = request.headers.get("authorization")?.replace("Bearer ", "") ?? new URL(request.url).searchParams.get("token"); if (!token) return null; const [payload, signature] = token.split("."); if (!payload || !signature || signature !== await signatureFor(payload, secret)) return null; const user = JSON.parse(atob(payload)) as User & { exp: number }; return user.exp > Date.now() ? { id: user.id, name: user.name } : null; }
+async function authenticate(request: Request, secret: string): Promise<User | null> { const token = request.headers.get("authorization")?.replace("Bearer ", "") ?? new URL(request.url).searchParams.get("token"); if (!token) return null; const [payload, signature] = token.split("."); if (!payload || !signature || signature !== await signatureFor(payload, secret)) return null; const user = JSON.parse(base64ToText(payload)) as User & { exp: number }; return user.exp > Date.now() ? { id: user.id, name: user.name } : null; }
 function toBase64(bytes: Uint8Array): string { let result = ""; for (const byte of bytes) result += String.fromCharCode(byte); return btoa(result); }
+function textToBase64(value: string): string { return toBase64(new TextEncoder().encode(value)); }
+function base64ToText(value: string): string { return new TextDecoder().decode(Uint8Array.from(atob(value), (char) => char.charCodeAt(0))); }

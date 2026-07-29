@@ -18,6 +18,27 @@
         }
       }
     },
-    "voiceAccess": { ".read": false, ".write": false }
+    "voiceAccess": { ".read": false, ".write": false },
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "profile": {
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.hasChildren(['displayName', 'avatarAsset', 'createdAt', 'updatedAt'])",
+          "displayName": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 24"
+          },
+          "avatarAsset": {
+            ".validate": "newData.isString() && newData.val().beginsWith('assets/images/')"
+          },
+          "createdAt": { ".validate": "newData.isNumber()" },
+          "updatedAt": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        },
+        "wallet": { ".write": false },
+        "titles": { ".write": false },
+        "equippedTitle": { ".write": false }
+      }
+    }
   }
 }

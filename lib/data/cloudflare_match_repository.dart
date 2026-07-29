@@ -1,12 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../domain/online_models.dart';
+import 'firebase_player_profile_store.dart';
 import 'online_room_repository.dart';
 
 /// Authoritative match repository backed by Cloudflare Durable Objects.
@@ -25,15 +24,10 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
   @override
   Future<PlayerProfile> ensureSignedIn() async {
     if (_profile != null) return _profile!;
-    final preferences = await SharedPreferences.getInstance();
-    var deviceId = preferences.getString('bangbang_cloudflare_player_id');
-    if (deviceId == null || deviceId.length < 8) {
-      deviceId = _newDeviceId();
-      await preferences.setString('bangbang_cloudflare_player_id', deviceId);
-    }
+    final account = await FirebasePlayerProfileStore.instance.ensureAccount();
     final profile = PlayerProfile(
-      uid: deviceId,
-      displayName: 'Cao bồi ${deviceId.substring(0, 5)}',
+      uid: account.uid,
+      displayName: account.displayName,
     );
     final response = await _client.post(
       _uri('/v1/session'),
@@ -48,15 +42,6 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
     if (_token == null) throw StateError('Không thể tạo phiên máy chủ.');
     _profile = profile;
     return profile;
-  }
-
-  String _newDeviceId() {
-    const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    final random = Random.secure();
-    return List.generate(
-      24,
-      (_) => alphabet[random.nextInt(alphabet.length)],
-    ).join();
   }
 
   Future<Map<String, dynamic>> _post(
@@ -85,7 +70,16 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
   }
 
   Map<String, dynamic> _decode(http.Response response) {
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    Map<String, dynamic> data;
+    try {
+      final decoded = jsonDecode(response.body);
+      data = Map<String, dynamic>.from(decoded as Map);
+    } on FormatException {
+      throw StateError(
+        'Máy chủ trận đấu lỗi HTTP ${response.statusCode}. '
+        'Vui lòng thử lại sau.',
+      );
+    }
     if (response.statusCode >= 400) {
       throw StateError(data['error'] ?? 'Máy chủ trận đấu không phản hồi.');
     }
@@ -159,6 +153,8 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
           'currentTargetId': item['targetId'],
           'responseDeadlineAt': item['deadline'],
           'requiredDodges': item['requiredDodges'],
+          'openedCardIds': item['openedCardIds'],
+          'currentPickerId': item['currentPickerId'],
         },
       ];
     } else {
@@ -178,11 +174,21 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
         roomName: 'Bàn ${data['code']}',
         maxPlayers: (data['maxPlayers'] as num?)?.toInt() ?? 4,
         turnDurationSeconds:
-            (data['turnDurationSeconds'] as num?)?.toInt() ?? 45,
+            (data['turnDurationSeconds'] as num?)?.toInt() ?? 60,
       ),
       status: status,
       phase: data['phase'] as String? ?? 'lobby',
+      sheriffPlayerId: rawPlayers
+          .where((player) => player['revealedRole'] == 'sheriff')
+          .map((player) => player['id'] as String)
+          .firstOrNull,
+      winner: data['winner'] as String?,
       currentTurnPlayerId: data['currentTurnPlayerId'] as String?,
+      turnDeadlineAt: data['turnDeadline'] is num
+          ? DateTime.fromMillisecondsSinceEpoch(
+              (data['turnDeadline'] as num).toInt(),
+            )
+          : null,
       turnNumber: (data['turnNumber'] as num?)?.toInt() ?? 0,
       bangUsedThisTurn: (data['bangUsedThisTurn'] as num?)?.toInt() ?? 0,
       publicLog: List<String>.from(data['publicLog'] as List? ?? const []),
@@ -348,16 +354,23 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
     final roomId = payload['roomId'] as String;
     final action = switch (name) {
       'drawTurnCards' => 'draw',
+      'openKitCarlson' => 'draw',
+      'drawCharacterTurnCards' => 'draw',
+      'drawJesseJones' => 'draw',
       'playCard' => 'play',
       'playSpecialCard' => 'play',
       'resolveTargetCard' => 'play',
       'openGeneralStore' => 'play',
+      'chooseGeneralStoreCard' => 'choose_general_store',
       'useSidKetchum' => 'sid_ketchum',
       'respondToAction' => 'respond_bang',
       'acceptBangDamage' => 'respond_bang',
       'resolveExpiredResponse' => 'respond_bang',
       'respondMultiAttack' => 'respond_bang',
       'respondDuel' => 'respond_bang',
+      'resolveSlabDodge' => 'respond_bang',
+      'useCalamityJanetDodge' => 'respond_bang',
+      'resolveJourdonnais' => 'respond_bang',
       'startMultiAttack' => 'play',
       'startDuel' => 'play',
       'requestEndTurn' => 'end_turn',
@@ -366,9 +379,20 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
     };
     final workerPayload = <String, dynamic>{...payload};
     if (name == 'respondToAction') {
-      workerPayload['response'] = payload['responseType'] ?? 'damage';
+      final response = payload['responseType'];
+      workerPayload['response'] = response == 'missed' || response == 'dodge'
+          ? 'dodge'
+          : response ?? 'damage';
     } else if (name == 'respondMultiAttack' || name == 'respondDuel') {
       workerPayload['response'] = payload['cardId'] == null ? 'damage' : 'card';
+    } else if (name == 'resolveSlabDodge') {
+      workerPayload['response'] = 'dodge';
+      final cards = List<String>.from(payload['cardIds'] as List? ?? const []);
+      workerPayload['cardIds'] = cards;
+    } else if (name == 'useCalamityJanetDodge') {
+      workerPayload['response'] = 'dodge';
+    } else if (name == 'resolveJourdonnais') {
+      workerPayload['response'] = 'damage';
     } else if (name == 'acceptBangDamage' || name == 'resolveExpiredResponse') {
       workerPayload['response'] = 'damage';
     }
