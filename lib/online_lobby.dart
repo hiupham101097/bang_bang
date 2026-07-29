@@ -485,6 +485,7 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
   OnlineRoom? room;
   PlayerProfile? profile;
   String? error;
+  bool startingGame = false;
 
   @override
   void initState() {
@@ -501,7 +502,15 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
           .watchRoom(widget.roomId)
           .listen(
             (value) {
-              if (mounted) setState(() => room = value);
+              if (!mounted) return;
+              setState(() {
+                room = value;
+                if (value?.status == RoomStatus.starting ||
+                    value?.status == RoomStatus.playing ||
+                    value?.phase == 'choosing_character') {
+                  startingGame = false;
+                }
+              });
             },
             onError: (Object value) {
               if (mounted) setState(() => error = '$value');
@@ -532,11 +541,27 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
   }
 
   Future<void> _startTestGame(OnlineRoom current) async {
-    final requiredBots = current.settings.maxPlayers - current.totalCount;
-    for (var index = 0; index < requiredBots; index++) {
-      await _call(() => widget.repository.addBot(current.id, 'normal'));
+    setState(() {
+      startingGame = true;
+      error = null;
+    });
+    try {
+      GameAudio.instance.playSfx('button_tap');
+      final requiredBots = current.settings.maxPlayers - current.totalCount;
+      for (var index = 0; index < requiredBots; index++) {
+        await widget.repository.addBot(current.id, 'normal');
+      }
+      await widget.repository.startGame(current.id);
+    } catch (exception) {
+      if (!mounted) return;
+      setState(() {
+        startingGame = false;
+        error = '$exception';
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$exception')));
     }
-    await _call(() => widget.repository.startGame(current.id));
   }
 
   @override
@@ -594,12 +619,30 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
         ),
       );
     }
+    if (startingGame && current.status == RoomStatus.waiting) {
+      return const _RoomBootScreen(
+        title: 'DANG KHOI TAO TRAN DAU',
+        detail: 'Dang nap ban, tron vai tro va chia bai...',
+      );
+    }
     if (current.status == RoomStatus.starting ||
         current.phase == 'choosing_character') {
-      return GameSetupScreen(repository: widget.repository, room: current);
+      return _RoomReadyGate(
+        setupStream: widget.repository.watchPrivateSetup(current.id),
+        title: 'DANG NAP VONG CHON',
+        detail: 'Dang lay bo the vai tro va nhan vat...',
+        builder: (context) =>
+            GameSetupScreen(repository: widget.repository, room: current),
+      );
     }
     if (current.status == RoomStatus.playing) {
-      return OnlineBattleScreen(repository: widget.repository, room: current);
+      return _RoomReadyGate(
+        handStream: widget.repository.watchHand(current.id),
+        title: 'DANG VAO VAN DAU',
+        detail: 'Dang nhan 7 la bai va dong bo ban choi...',
+        builder: (context) =>
+            OnlineBattleScreen(repository: widget.repository, room: current),
+      );
     }
     if (current.phase == 'game_over') {
       final orderedMembers = [...current.members]
@@ -884,6 +927,113 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                   ),
               ],
             ),
+    ),
+  );
+}
+
+class _RoomReadyGate extends StatelessWidget {
+  const _RoomReadyGate({
+    required this.title,
+    required this.detail,
+    required this.builder,
+    this.setupStream,
+    this.handStream,
+  });
+
+  final String title;
+  final String detail;
+  final WidgetBuilder builder;
+  final Stream<PrivateSetupState?>? setupStream;
+  final Stream<List<String>>? handStream;
+
+  @override
+  Widget build(BuildContext context) {
+    final setup = setupStream;
+    if (setup != null) {
+      return StreamBuilder<PrivateSetupState?>(
+        stream: setup,
+        builder: (context, snapshot) {
+          if (snapshot.hasData && snapshot.data != null) {
+            return builder(context);
+          }
+          return _RoomBootScreen(title: title, detail: detail);
+        },
+      );
+    }
+
+    final hand = handStream;
+    if (hand != null) {
+      return StreamBuilder<List<String>>(
+        stream: hand,
+        builder: (context, snapshot) {
+          if (snapshot.hasData) return builder(context);
+          return _RoomBootScreen(title: title, detail: detail);
+        },
+      );
+    }
+
+    return builder(context);
+  }
+}
+
+class _RoomBootScreen extends StatelessWidget {
+  const _RoomBootScreen({required this.title, required this.detail});
+
+  final String title;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: const Color(0xff160c08),
+    body: Stack(
+      children: [
+        const Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage('assets/images/room_table.png'),
+                fit: BoxFit.cover,
+                opacity: .7,
+              ),
+            ),
+          ),
+        ),
+        const Positioned.fill(child: ColoredBox(color: Color(0xb0160c08))),
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 340),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  width: 46,
+                  height: 46,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                    color: Color(0xffffc451),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xffffc451),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  detail,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     ),
   );
 }

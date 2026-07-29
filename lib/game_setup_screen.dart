@@ -85,11 +85,10 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                     child: _SetupHeader(
                       phase: phase,
                       deadline: state?.selectionDeadlineAt,
-                      members: widget.room.members,
                     ),
                   ),
                   Positioned.fill(
-                    top: 68,
+                    top: 34,
                     bottom: 8,
                     child: state == null
                         ? const Center(child: CircularProgressIndicator())
@@ -121,10 +120,12 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                   ),
                   if (state != null)
                     Positioned.fill(
-                      top: 84,
+                      top: 42,
                       bottom: 8,
                       child: IgnorePointer(
                         ignoring:
+                            _pendingRoleCardId != null ||
+                            _pendingCharacterCardId != null ||
                             !((isRoleStep && !hasPickedRole) ||
                                 (isCharacterStep &&
                                     state.characterOptions.length < 2)),
@@ -169,6 +170,12 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                             cardId,
                           );
                         },
+                        child: const _CardBack(
+                          width: 102,
+                          height: 143,
+                          label: 'VAI TRO',
+                          highlighted: true,
+                        ),
                       ),
                     ),
                   if (state != null &&
@@ -190,6 +197,12 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                             cardId,
                           );
                         },
+                        child: const _CardBack(
+                          width: 102,
+                          height: 143,
+                          label: 'NHAN VAT',
+                          highlighted: true,
+                        ),
                       ),
                     ),
                 ],
@@ -225,90 +238,48 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
 }
 
 class _SetupHeader extends StatelessWidget {
-  const _SetupHeader({
-    required this.phase,
-    required this.deadline,
-    required this.members,
-  });
+  const _SetupHeader({required this.phase, required this.deadline});
 
   final String phase;
   final DateTime? deadline;
-  final List<RoomMember> members;
 
   @override
   Widget build(BuildContext context) {
     final seconds = deadline?.difference(DateTime.now()).inSeconds.clamp(0, 60);
     final urgent = seconds != null && seconds <= 10;
     return SizedBox(
-      height: 64,
-      child: Column(
+      height: 28,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  _phaseTitle(phase),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xffffc451),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
+          const Icon(Icons.pause, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _phaseTitle(phase),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xffffc451),
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: urgent
-                      ? const Color(0xff5a1913)
-                      : const Color(0xff2c1a0f),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: urgent ? Colors.redAccent : const Color(0xffffc451),
-                  ),
-                ),
-                child: Text(
-                  seconds == null ? '--' : '${seconds}s',
-                  style: TextStyle(
-                    color: urgent ? Colors.redAccent : const Color(0xffffd272),
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
-          const SizedBox(height: 5),
-          SizedBox(
-            height: 25,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: members
-                    .map(
-                      (member) => Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 2),
-                        child: Chip(
-                          visualDensity: VisualDensity.compact,
-                          labelPadding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                          ),
-                          avatar: Icon(
-                            member.isBot ? Icons.smart_toy : Icons.person,
-                            size: 13,
-                          ),
-                          label: Text(
-                            member.displayName,
-                            style: const TextStyle(fontSize: 10),
-                          ),
-                        ),
-                      ),
-                    )
-                    .toList(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+            decoration: BoxDecoration(
+              color: urgent ? const Color(0xff5a1913) : const Color(0xff2c1a0f),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: urgent ? Colors.redAccent : const Color(0xffffc451),
+              ),
+            ),
+            child: Text(
+              seconds == null ? '--' : '${seconds}s',
+              style: TextStyle(
+                color: urgent ? Colors.redAccent : const Color(0xffffd272),
+                fontWeight: FontWeight.w900,
+                fontSize: 12,
               ),
             ),
           ),
@@ -323,15 +294,15 @@ class _SetupPlayerRing extends StatelessWidget {
 
   final List<RoomMember> members;
 
-  static const _anchors = <Alignment>[
-    Alignment.topCenter,
-    Alignment.topRight,
-    Alignment.centerRight,
-    Alignment.bottomRight,
-    Alignment.bottomCenter,
-    Alignment.bottomLeft,
-    Alignment.centerLeft,
-    Alignment.topLeft,
+  static const _seatPoints = <Offset>[
+    Offset(.50, .05),
+    Offset(.78, .10),
+    Offset(.93, .43),
+    Offset(.78, .76),
+    Offset(.50, .84),
+    Offset(.22, .76),
+    Offset(.07, .43),
+    Offset(.22, .10),
   ];
 
   @override
@@ -339,20 +310,19 @@ class _SetupPlayerRing extends StatelessWidget {
     builder: (context, constraints) {
       final seat = (math.min(constraints.maxWidth, constraints.maxHeight) * .14)
           .clamp(42.0, 68.0);
-      final players = members.take(8).toList(growable: false);
+      final players = members.take(8).toList()
+        ..sort((left, right) => left.seat.compareTo(right.seat));
       return Stack(
         children: [
           for (var index = 0; index < players.length; index++)
             () {
-              final point = _anchors[index].alongSize(
-                Size(constraints.maxWidth, constraints.maxHeight),
-              );
-              final left = (point.dx - seat / 2).clamp(
+              final point = _seatPoints[index];
+              final left = (point.dx * constraints.maxWidth - seat / 2).clamp(
                 4.0,
                 constraints.maxWidth - seat - 4,
               );
-              final top = (point.dy - seat / 2).clamp(
-                34.0,
+              final top = (point.dy * constraints.maxHeight - seat / 2).clamp(
+                4.0,
                 constraints.maxHeight - seat - 4,
               );
               final member = players[index];
@@ -715,30 +685,37 @@ class _CharacterDeck extends StatelessWidget {
 
 class _SetupPickConfirm extends StatelessWidget {
   const _SetupPickConfirm({
+    required this.child,
     required this.title,
     required this.onCancel,
     required this.onConfirm,
   });
 
+  final Widget child;
   final String title;
   final VoidCallback onCancel;
   final VoidCallback onConfirm;
 
   @override
-  Widget build(BuildContext context) => DecoratedBox(
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.fromLTRB(10, 10, 10, 9),
     decoration: BoxDecoration(
-      color: const Color(0xee23140d),
-      borderRadius: BorderRadius.circular(8),
+      color: const Color(0xd9160c08),
+      borderRadius: BorderRadius.circular(10),
       border: Border.all(color: const Color(0xffffc451), width: 2),
-      boxShadow: const [BoxShadow(color: Color(0xcc000000), blurRadius: 14)],
+      boxShadow: const [BoxShadow(color: Color(0xcc000000), blurRadius: 18)],
     ),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+    child: FittedBox(
+      fit: BoxFit.scaleDown,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          child,
+          const SizedBox(height: 8),
           Text(
             title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: Color(0xffffd272),
               fontSize: 12,

@@ -937,8 +937,8 @@ class OnlineBattleScreen extends StatelessWidget {
 
       return Container(
         width: double.infinity,
-        margin: const EdgeInsets.only(bottom: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        margin: EdgeInsets.zero,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(
           color: const Color(0xdd24140d),
           borderRadius: BorderRadius.circular(8),
@@ -1066,7 +1066,7 @@ class OnlineBattleScreen extends StatelessWidget {
                   _actionLabel(type),
                   style: const TextStyle(
                     color: Color(0xffffd272),
-                    fontSize: 10,
+                    fontSize: 9,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -1103,86 +1103,6 @@ class OnlineBattleScreen extends StatelessWidget {
       final canDraw = isMyTurn && phase == 'turn_start';
       return Scaffold(
         backgroundColor: const Color(0xff160c08),
-        appBar: AppBar(
-          toolbarHeight: 38,
-          titleSpacing: 8,
-          title: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                isMyTurn ? 'LƯỢT CỦA BẠN' : 'ĐANG THEO DÕI',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                  color: isMyTurn ? bangGold : Colors.white,
-                  letterSpacing: .35,
-                ),
-              ),
-              Text(
-                activePlayer == null
-                    ? _phaseLabel(phase)
-                    : isMyTurn
-                    ? 'Chọn bài ở thanh dưới để chơi'
-                    : 'Lượt của ${activePlayer.displayName}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 8, color: Colors.white70),
-              ),
-            ],
-          ),
-          actions: [
-            if (room.settings.voiceEnabled && GameVoiceChat.isAvailable)
-              AnimatedBuilder(
-                animation: GameVoiceChat.instance,
-                builder: (context, _) {
-                  final voice = GameVoiceChat.instance;
-                  final joinedThisRoom =
-                      voice.isJoined && voice.roomId == room.id;
-                  return IconButton(
-                    tooltip: joinedThisRoom ? 'Voice đang bật' : 'Voice phòng',
-                    onPressed: () => _showVoice(context),
-                    icon: Icon(
-                      voice.isMuted
-                          ? Icons.mic_off
-                          : joinedThisRoom
-                          ? Icons.mic
-                          : Icons.mic_none,
-                      color: joinedThisRoom ? const Color(0xffffc451) : null,
-                    ),
-                  );
-                },
-              ),
-            if (room.settings.chatEnabled && GameVoiceChat.isAvailable)
-              IconButton(
-                tooltip: 'Chat phòng',
-                onPressed: () => _showChat(context),
-                icon: const Icon(Icons.forum_outlined),
-              ),
-            IconButton(
-              tooltip: 'Nhật ký hành động',
-              onPressed: room.publicLog.isEmpty
-                  ? null
-                  : () => _showActionLog(context),
-              icon: const Icon(Icons.history),
-            ),
-            IconButton(
-              tooltip: 'Hướng dẫn',
-              onPressed: () => _showGuide(context, phase, isMyTurn),
-              icon: const Icon(Icons.help_outline),
-            ),
-          ],
-        ),
-        bottomNavigationBar: _BattleHandDock(
-          repository: repository,
-          room: room,
-          isMyTurn: isMyTurn,
-          canPlay: canPlay,
-          activePlayer: activePlayer,
-          onPlay: playerId == null
-              ? (_) async {}
-              : (cardId) => _playCard(context, cardId, playerId),
-        ),
         body: Stack(
           children: [
             const Positioned.fill(
@@ -1197,65 +1117,106 @@ class OnlineBattleScreen extends StatelessWidget {
               ),
             ),
             const Positioned.fill(child: ColoredBox(color: Color(0xa9160c08))),
-            SafeArea(
-              top: false,
+            Positioned(
+              left: 4,
+              top: 4,
+              child: _TinyTableButton(
+                icon: Icons.pause,
+                onPressed: () => _showGuide(context, phase, isMyTurn),
+              ),
+            ),
+            Positioned(
+              right: 4,
+              top: 4,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (room.publicLog.isNotEmpty)
+                    _TinyTableButton(
+                      icon: Icons.history,
+                      onPressed: () => _showActionLog(context),
+                    ),
+                  if (room.settings.chatEnabled && GameVoiceChat.isAvailable)
+                    _TinyTableButton(
+                      icon: Icons.forum_outlined,
+                      onPressed: () => _showChat(context),
+                    ),
+                  _TinyTableButton(
+                    icon: Icons.help_outline,
+                    onPressed: () => _showGuide(context, phase, isMyTurn),
+                  ),
+                  if (room.settings.voiceEnabled && GameVoiceChat.isAvailable)
+                    _TinyTableButton(
+                      icon: Icons.mic_none,
+                      onPressed: () => _showVoice(context),
+                    ),
+                ],
+              ),
+            ),
+            Positioned.fill(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 5, 8, 6),
-                child: Column(
+                padding: const EdgeInsets.fromLTRB(8, 30, 8, 112),
+                child: _CentralActionArea(
+                  repository: repository,
+                  room: room,
+                  playerId: playerId,
+                ),
+              ),
+            ),
+            Positioned(
+              left: 42,
+              top: 4,
+              right: 120,
+              child: _BattleStatusStrip(
+                title: activePlayer == null
+                    ? _phaseLabel(phase)
+                    : isMyTurn
+                    ? 'DEN LUOT CUA BAN'
+                    : activePlayer.displayName,
+                phase: phase,
+                deadline: room.turnDeadlineAt,
+                isMyTurn: isMyTurn,
+              ),
+            ),
+            Positioned(
+              left: 8,
+              right: 8,
+              bottom: 4,
+              child: _BattleBottomRail(
+                equipment: _EquipmentBar(
+                  equipment: currentPlayer?.equipment ?? const [],
+                ),
+                handDock: _BattleHandDock(
+                  repository: repository,
+                  room: room,
+                  isMyTurn: isMyTurn,
+                  canPlay: canPlay,
+                  activePlayer: activePlayer,
+                  onPlay: playerId == null
+                      ? (_) async {}
+                      : (cardId) => _playCard(context, cardId, playerId),
+                ),
+                pending: _pendingActionDock(context, playerId),
+                log: room.publicLog.isEmpty
+                    ? null
+                    : _publicLogLabel(room, room.publicLog.last),
+                actions: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    _BattleStatusStrip(
-                      title: activePlayer == null
-                          ? _phaseLabel(phase)
-                          : isMyTurn
-                          ? 'DEN LUOT CUA BAN'
-                          : 'DANG CHO ${activePlayer.displayName.toUpperCase()}',
-                      phase: phase,
-                      deadline: room.turnDeadlineAt,
-                      isMyTurn: isMyTurn,
-                    ),
-                    Expanded(
-                      child: _CentralActionArea(
-                        repository: repository,
-                        room: room,
-                        playerId: playerId,
-                      ),
-                    ),
-                    _pendingActionDock(context, playerId),
-                    if (room.publicLog.isNotEmpty)
-                      Text(
-                        _publicLogLabel(room, room.publicLog.last),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
+                    if (canDraw)
+                      FilledButton(
+                        onPressed: () => _drawTurn(
+                          context,
+                          playerId,
+                          activePlayer?.characterId,
                         ),
+                        child: const Text('RUT 2'),
                       ),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _EquipmentBar(
-                            equipment: currentPlayer?.equipment ?? const [],
-                          ),
-                        ),
-                        if (canDraw)
-                          FilledButton(
-                            onPressed: () => _drawTurn(
-                              context,
-                              playerId,
-                              activePlayer?.characterId,
-                            ),
-                            child: const Text('RUT 2'),
-                          ),
-                        if (canPlay)
-                          FilledButton.tonal(
-                            onPressed: () => _call(context, 'requestEndTurn'),
-                            child: const Text('HET LUOT'),
-                          ),
-                      ],
-                    ),
+                    if (canPlay)
+                      FilledButton.tonal(
+                        onPressed: () => _call(context, 'requestEndTurn'),
+                        child: const Text('HET LUOT'),
+                      ),
                   ],
                 ),
               ),
@@ -1323,6 +1284,85 @@ class _BattleStatusStrip extends StatelessWidget {
   );
 }
 
+class _TinyTableButton extends StatelessWidget {
+  const _TinyTableButton({required this.icon, required this.onPressed});
+
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 28,
+    height: 28,
+    child: IconButton.filledTonal(
+      padding: EdgeInsets.zero,
+      iconSize: 16,
+      onPressed: onPressed,
+      icon: Icon(icon),
+    ),
+  );
+}
+
+class _BattleBottomRail extends StatelessWidget {
+  const _BattleBottomRail({
+    required this.equipment,
+    required this.handDock,
+    required this.pending,
+    required this.log,
+    required this.actions,
+  });
+
+  final Widget equipment;
+  final Widget handDock;
+  final Widget pending;
+  final String? log;
+  final Widget actions;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 104,
+    child: Column(
+      children: [
+        SizedBox(
+          height: 22,
+          child: Row(
+            children: [
+              SizedBox(width: 96, child: equipment),
+              Expanded(
+                child: DefaultTextStyle(
+                  style: const TextStyle(color: Colors.white70, fontSize: 9),
+                  child: Center(
+                    child: log == null
+                        ? pending
+                        : Text(
+                            log!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                          ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 82),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              const SizedBox(width: 40),
+              Expanded(child: handDock),
+              const SizedBox(width: 6),
+              SizedBox(width: 76, child: actions),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 /// Fixed hand dock: the player's cards are always visible, including while
 /// the public table is being watched.  The full action panel remains in the
 /// scrollable area for special actions, while this dock handles the usual
@@ -1345,147 +1385,137 @@ class _BattleHandDock extends StatelessWidget {
   final Future<void> Function(String cardId) onPlay;
 
   @override
-  Widget build(BuildContext context) => SafeArea(
-    top: false,
-    child: Container(
-      height: 116,
-      padding: const EdgeInsets.fromLTRB(9, 5, 9, 7),
-      decoration: const BoxDecoration(
-        color: Color(0xee170d09),
-        border: Border(top: BorderSide(color: Color(0xff9a6a35))),
-        boxShadow: [BoxShadow(color: Color(0xbb000000), blurRadius: 12)],
-      ),
-      child: StreamBuilder<List<String>>(
-        stream: repository.watchHand(room.id),
-        builder: (context, snapshot) {
-          final cards = snapshot.data ?? const <String>[];
-          final selectedNotifier = OnlineBattleScreen._selectedHandCard(
-            room.id,
-          );
-          if (selectedNotifier.value != null &&
-              !cards.contains(selectedNotifier.value)) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              selectedNotifier.value = null;
-            });
-          }
-          return ValueListenableBuilder<String?>(
-            valueListenable: selectedNotifier,
-            builder: (context, selectedCardId, _) {
-              final selectedIsBang =
-                  selectedCardId?.startsWith('bang_') ?? false;
-              final unlimitedBang =
-                  activePlayer?.characterId == 'willy_the_kid' ||
-                  activePlayer?.equipment.any(
-                        (card) => card.startsWith('volcanic_'),
-                      ) ==
-                      true;
-              final bangBlocked =
-                  selectedIsBang &&
-                  room.bangUsedThisTurn >= 1 &&
-                  !unlimitedBang;
-              final canConfirm =
-                  selectedCardId != null && canPlay && !bangBlocked;
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        'BAI CUA BAN  ${cards.length}',
+  Widget build(BuildContext context) => Container(
+    height: 84,
+    padding: const EdgeInsets.fromLTRB(7, 4, 7, 5),
+    decoration: BoxDecoration(
+      color: const Color(0x88170d09),
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: const Color(0x999a6a35)),
+      boxShadow: const [BoxShadow(color: Color(0x66000000), blurRadius: 8)],
+    ),
+    child: StreamBuilder<List<String>>(
+      stream: repository.watchHand(room.id),
+      builder: (context, snapshot) {
+        final cards = snapshot.data ?? const <String>[];
+        final selectedNotifier = OnlineBattleScreen._selectedHandCard(room.id);
+        if (selectedNotifier.value != null &&
+            !cards.contains(selectedNotifier.value)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            selectedNotifier.value = null;
+          });
+        }
+        return ValueListenableBuilder<String?>(
+          valueListenable: selectedNotifier,
+          builder: (context, selectedCardId, _) {
+            final selectedIsBang = selectedCardId?.startsWith('bang_') ?? false;
+            final unlimitedBang =
+                activePlayer?.characterId == 'willy_the_kid' ||
+                activePlayer?.equipment.any(
+                      (card) => card.startsWith('volcanic_'),
+                    ) ==
+                    true;
+            final bangBlocked =
+                selectedIsBang && room.bangUsedThisTurn >= 1 && !unlimitedBang;
+            final canConfirm =
+                selectedCardId != null && canPlay && !bangBlocked;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'BAI CUA BAN  ${cards.length}',
+                      style: const TextStyle(
+                        color: Color(0xffffd272),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 10,
+                        letterSpacing: .5,
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        !isMyTurn
+                            ? 'Dang theo doi luot doi thu'
+                            : canPlay
+                            ? 'Chon 1 la de danh'
+                            : 'Hoan thanh buoc dau luot',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: Color(0xffffd272),
-                          fontWeight: FontWeight.w900,
-                          fontSize: 10,
-                          letterSpacing: .5,
+                          color: Colors.white60,
+                          fontSize: 9,
                         ),
                       ),
-                      const SizedBox(width: 7),
-                      Expanded(
-                        child: Text(
-                          !isMyTurn
-                              ? 'Dang theo doi luot doi thu'
-                              : canPlay
-                              ? 'Chon 1 la de danh'
-                              : 'Hoan thanh buoc dau luot',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white60,
-                            fontSize: 9,
+                    ),
+                    if (selectedCardId != null)
+                      SizedBox(
+                        height: 23,
+                        child: FilledButton(
+                          onPressed: canConfirm
+                              ? () async {
+                                  final cardId = selectedCardId;
+                                  selectedNotifier.value = null;
+                                  await onPlay(cardId);
+                                }
+                              : null,
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 9),
+                            textStyle: const TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
+                          child: Text(bangBlocked ? 'DA DUNG BANG' : 'DANH'),
                         ),
                       ),
-                      if (selectedCardId != null)
-                        SizedBox(
-                          height: 23,
-                          child: FilledButton(
-                            onPressed: canConfirm
-                                ? () async {
-                                    final cardId = selectedCardId;
-                                    selectedNotifier.value = null;
-                                    await onPlay(cardId);
-                                  }
-                                : null,
-                            style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 9,
-                              ),
-                              textStyle: const TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.w900,
-                              ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Expanded(
+                  child: cards.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'Chua co bai. Den luot hay rut 2 la.',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 11,
                             ),
-                            child: Text(bangBlocked ? 'DA DUNG BANG' : 'DANH'),
                           ),
+                        )
+                      : ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 2),
+                          itemCount: cards.length,
+                          separatorBuilder: (_, _) => const SizedBox(width: 5),
+                          itemBuilder: (context, index) {
+                            final cardId = cards[index];
+                            final isBang = cardId.startsWith('bang_');
+                            final cardBangBlocked =
+                                isBang &&
+                                room.bangUsedThisTurn >= 1 &&
+                                !unlimitedBang;
+                            return GameCardWidget(
+                              card: _publicGameCard(cardId),
+                              width: 50,
+                              isSelected: cardId == selectedCardId,
+                              isEnabled: canPlay && !cardBangBlocked,
+                              onTap: !canPlay || cardBangBlocked
+                                  ? null
+                                  : () => selectedNotifier.value =
+                                        selectedCardId == cardId
+                                        ? null
+                                        : cardId,
+                            );
+                          },
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Expanded(
-                    child: cards.isEmpty
-                        ? const Center(
-                            child: Text(
-                              'Chua co bai. Den luot hay rut 2 la.',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 11,
-                              ),
-                            ),
-                          )
-                        : ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            padding: const EdgeInsets.symmetric(horizontal: 2),
-                            itemCount: cards.length,
-                            separatorBuilder: (_, _) =>
-                                const SizedBox(width: 5),
-                            itemBuilder: (context, index) {
-                              final cardId = cards[index];
-                              final isBang = cardId.startsWith('bang_');
-                              final cardBangBlocked =
-                                  isBang &&
-                                  room.bangUsedThisTurn >= 1 &&
-                                  !unlimitedBang;
-                              return GameCardWidget(
-                                card: _publicGameCard(cardId),
-                                width: 50,
-                                isSelected: cardId == selectedCardId,
-                                isEnabled: canPlay && !cardBangBlocked,
-                                onTap: !canPlay || cardBangBlocked
-                                    ? null
-                                    : () => selectedNotifier.value =
-                                          selectedCardId == cardId
-                                          ? null
-                                          : cardId,
-                              );
-                            },
-                          ),
-                  ),
-                ],
-              );
-            },
-          );
-        },
-      ),
+                ),
+              ],
+            );
+          },
+        );
+      },
     ),
   );
 }
@@ -1537,50 +1567,57 @@ class _CentralActionArea extends StatelessWidget {
           ? '${actor?.displayName ?? 'Người chơi'} đang dùng ${_actionLabel(actionType)}.'
           : '${actor?.displayName ?? 'Người chơi'} dùng ${_actionLabel(actionType)} vào ${target.displayName}.';
 
-      return Column(
+      return Stack(
         children: [
-          _PlayerTable(
-            members: room.members,
-            currentTurnPlayerId: room.currentTurnPlayerId,
-            latestPublicLog: room.publicLog.isEmpty
-                ? null
-                : room.publicLog.last,
-            turnDeadlineAt: room.turnDeadlineAt,
-            pendingAction: action,
-          ),
-          const SizedBox(height: 4),
-          Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 6,
-            runSpacing: 4,
-            children: [
-              _PileMarker(
-                icon: Icons.layers_outlined,
-                label: 'RUT',
-                detail: 'up',
-              ),
-              if (actionCardId != null)
-                _PublicCardStage(cardId: actionCardId, summary: summary)
-              else
-                _EmptyActionStage(summary: summary),
-              _PileMarker(
-                icon: Icons.delete_sweep_outlined,
-                label: 'BO',
-                detail: room.discardTopCardId == null
-                    ? 'trong'
-                    : _cardLabel(room.discardTopCardId!),
-              ),
-            ],
-          ),
-          if (action != null) ...[
-            const SizedBox(height: 5),
-            _PublicResponseLine(
-              action: action,
-              actorName: actor?.displayName,
-              targetName: target?.displayName,
+          Positioned.fill(
+            child: _PlayerTable(
+              members: room.members,
+              currentTurnPlayerId: room.currentTurnPlayerId,
+              latestPublicLog: room.publicLog.isEmpty
+                  ? null
+                  : room.publicLog.last,
+              turnDeadlineAt: room.turnDeadlineAt,
+              pendingAction: action,
             ),
-          ],
+          ),
+          Align(
+            alignment: Alignment.center,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _PileMarker(
+                    icon: Icons.layers_outlined,
+                    label: 'RUT',
+                    detail: 'up',
+                  ),
+                  const SizedBox(width: 8),
+                  if (actionCardId != null)
+                    _PublicCardStage(cardId: actionCardId, summary: summary)
+                  else
+                    _EmptyActionStage(summary: summary),
+                  const SizedBox(width: 8),
+                  _PileMarker(
+                    icon: Icons.delete_sweep_outlined,
+                    label: 'BO',
+                    detail: room.discardTopCardId == null
+                        ? 'trong'
+                        : _cardLabel(room.discardTopCardId!),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (action != null)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: _PublicResponseLine(
+                action: action,
+                actorName: actor?.displayName,
+                targetName: target?.displayName,
+              ),
+            ),
         ],
       );
     },
@@ -1698,46 +1735,26 @@ class _EquipmentBar extends StatelessWidget {
   final List<String> equipment;
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      const Text(
-        'TRANG BỊ / THẺ ĐÃ ĐẶT',
-        style: TextStyle(
-          fontSize: 11,
-          color: Color(0xffffd272),
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-      const SizedBox(height: 4),
-      SizedBox(
-        height: 38,
-        child: equipment.isEmpty
-            ? const Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Chưa có trang bị được đặt.',
-                  style: TextStyle(color: Colors.white54, fontSize: 11),
+  Widget build(BuildContext context) => SizedBox(
+    height: 34,
+    child: equipment.isEmpty
+        ? const SizedBox.shrink()
+        : ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: equipment.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 4),
+            itemBuilder: (context, index) {
+              final cardId = equipment[index];
+              return Tooltip(
+                message: _cardLabel(cardId),
+                child: GameCardWidget(
+                  card: _publicGameCard(cardId),
+                  width: 26,
+                  isEnabled: false,
                 ),
-              )
-            : ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: equipment.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 6),
-                itemBuilder: (context, index) {
-                  final cardId = equipment[index];
-                  return Tooltip(
-                    message: _cardLabel(cardId),
-                    child: GameCardWidget(
-                      card: _publicGameCard(cardId),
-                      width: 30,
-                      isEnabled: false,
-                    ),
-                  );
-                },
-              ),
-      ),
-    ],
+              );
+            },
+          ),
   );
 }
 
@@ -1766,97 +1783,94 @@ class _PlayerTable extends StatelessWidget {
   final DateTime? turnDeadlineAt;
   final Map<String, dynamic>? pendingAction;
 
-  static const _seatAnchors = <Alignment>[
-    Alignment.topCenter,
-    Alignment.topRight,
-    Alignment.centerRight,
-    Alignment.bottomRight,
-    Alignment.bottomCenter,
-    Alignment.bottomLeft,
-    Alignment.centerLeft,
-    Alignment.topLeft,
+  static const _seatPoints = <Offset>[
+    Offset(.50, .04),
+    Offset(.78, .10),
+    Offset(.93, .43),
+    Offset(.78, .76),
+    Offset(.50, .84),
+    Offset(.22, .76),
+    Offset(.07, .43),
+    Offset(.22, .10),
   ];
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 132,
-    child: LayoutBuilder(
-      builder: (context, constraints) {
-        final seatWidth = (constraints.maxWidth / 6.4).clamp(42.0, 60.0);
-        final seatHeight = seatWidth;
-        final tableHeight = constraints.maxHeight;
-        final players = members.take(8).toList(growable: false);
-        final bang = _bangEvent(latestPublicLog);
-        final pendingBang = pendingAction?['actionType'] == 'bang';
-        final pendingActorId = pendingAction == null
-            ? null
-            : pendingAction!['actorPlayerId'] as String?;
-        final pendingTargetId = pendingAction == null
-            ? null
-            : pendingAction!['currentTargetId'] as String?;
-        final pendingActionId = pendingAction == null
-            ? null
-            : pendingAction!['id'] as String?;
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Positioned(
-              left: seatWidth * .68,
-              right: seatWidth * .68,
-              top: seatHeight * .62,
-              bottom: seatHeight * .62,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: const Color(0xcc315f2e),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0x99d8e6a3), width: 2),
-                  boxShadow: const [
-                    BoxShadow(color: Color(0xaa071d08), blurRadius: 18),
-                  ],
-                ),
-                child: const Center(
-                  child: Text(
-                    'BÀN ĐẤU',
-                    style: TextStyle(
-                      color: Color(0xffffd272),
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.5,
-                    ),
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final seatWidth = math
+          .min(constraints.maxWidth * .145, constraints.maxHeight * .27)
+          .clamp(42.0, 70.0);
+      final seatHeight = seatWidth * .96;
+      final players = members.take(8).toList()
+        ..sort((left, right) => left.seat.compareTo(right.seat));
+      final bang = _bangEvent(latestPublicLog);
+      final pendingBang = pendingAction?['actionType'] == 'bang';
+      final pendingActorId = pendingAction == null
+          ? null
+          : pendingAction!['actorPlayerId'] as String?;
+      final pendingTargetId = pendingAction == null
+          ? null
+          : pendingAction!['currentTargetId'] as String?;
+      final pendingActionId = pendingAction == null
+          ? null
+          : pendingAction!['id'] as String?;
+      return Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: constraints.maxWidth * .18,
+            right: constraints.maxWidth * .18,
+            top: constraints.maxHeight * .17,
+            bottom: constraints.maxHeight * .17,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: const Color(0x55315f2e),
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0x66d8e6a3), width: 2),
+                boxShadow: const [
+                  BoxShadow(color: Color(0xaa071d08), blurRadius: 18),
+                ],
+              ),
+              child: const Center(
+                child: Text(
+                  'BÀN ĐẤU',
+                  style: TextStyle(
+                    color: Color(0xffffd272),
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.5,
                   ),
                 ),
               ),
             ),
-            for (var index = 0; index < players.length; index++)
-              () {
-                final anchor = _seatAnchors[index].alongSize(
-                  Size(constraints.maxWidth, tableHeight),
-                );
-                final x = anchor.dx - seatWidth / 2;
-                final y = anchor.dy - seatHeight / 2;
-                final member = players[index];
-                return Positioned(
-                  left: x.clamp(0.0, constraints.maxWidth - seatWidth),
-                  top: y.clamp(0.0, tableHeight - seatHeight),
-                  width: seatWidth,
-                  height: seatHeight,
-                  child: _PlayerSeat(
-                    member: member,
-                    isCurrent: member.id == currentTurnPlayerId,
-                    isBangShooter: pendingBang
-                        ? member.id == pendingActorId
-                        : member.id == bang?.shooterId,
-                    isBangTarget: pendingBang
-                        ? member.id == pendingTargetId
-                        : member.id == bang?.targetId,
-                    bangEventId: pendingBang ? pendingActionId : bang?.id,
-                    turnDeadlineAt: turnDeadlineAt,
-                  ),
-                );
-              }(),
-          ],
-        );
-      },
-    ),
+          ),
+          for (var index = 0; index < players.length; index++)
+            () {
+              final point = _seatPoints[index];
+              final x = point.dx * constraints.maxWidth - seatWidth / 2;
+              final y = point.dy * constraints.maxHeight - seatHeight / 2;
+              final member = players[index];
+              return Positioned(
+                left: x.clamp(0.0, constraints.maxWidth - seatWidth),
+                top: y.clamp(0.0, constraints.maxHeight - seatHeight),
+                width: seatWidth,
+                height: seatHeight,
+                child: _PlayerSeat(
+                  member: member,
+                  isCurrent: member.id == currentTurnPlayerId,
+                  isBangShooter: pendingBang
+                      ? member.id == pendingActorId
+                      : member.id == bang?.shooterId,
+                  isBangTarget: pendingBang
+                      ? member.id == pendingTargetId
+                      : member.id == bang?.targetId,
+                  bangEventId: pendingBang ? pendingActionId : bang?.id,
+                  turnDeadlineAt: turnDeadlineAt,
+                ),
+              );
+            }(),
+        ],
+      );
+    },
   );
 }
 
@@ -1930,121 +1944,122 @@ class _PlayerSeatState extends State<_PlayerSeat> {
   Widget build(BuildContext context) {
     final member = widget.member;
     final active = widget.isCurrent;
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        for (var i = 0; i < math.min(member.cardCount, 4); i++)
-          Positioned(
-            left: 10.0 + i * 8,
-            bottom: -2,
-            child: Transform.rotate(
-              angle: -.24 + i * .14,
-              child: Container(
-                width: 24,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: const Color(0xffc39055),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: const Color(0xff3b1f10)),
-                  boxShadow: const [
-                    BoxShadow(color: Color(0x77000000), blurRadius: 4),
-                  ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = math.min(constraints.maxWidth, constraints.maxHeight);
+        final avatar = (size * .68).clamp(30.0, 48.0);
+        return Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            for (var i = 0; i < math.min(member.cardCount, 4); i++)
+              Positioned(
+                left: constraints.maxWidth * .18 + i * 6,
+                bottom: 0,
+                child: Transform.rotate(
+                  angle: -.25 + i * .15,
+                  child: Container(
+                    width: size * .34,
+                    height: size * .48,
+                    decoration: BoxDecoration(
+                      color: const Color(0xffc39055),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: const Color(0xff3b1f10)),
+                      boxShadow: const [
+                        BoxShadow(color: Color(0x77000000), blurRadius: 4),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              width: avatar,
+              height: avatar,
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                color: member.isAlive
+                    ? active
+                          ? Color.lerp(
+                              const Color(0xff5a3116),
+                              const Color(0xff8a521d),
+                              _bright ? 1 : .25,
+                            )
+                          : const Color(0xff2a1811)
+                    : const Color(0xff16100d),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: active
+                      ? const Color(0xffffc451)
+                      : const Color(0xff63432e),
+                  width: active ? 2 : 1,
+                ),
+                boxShadow: active && _bright
+                    ? const [
+                        BoxShadow(color: Color(0x99ffb12e), blurRadius: 10),
+                      ]
+                    : null,
+              ),
+              child: ClipOval(
+                child: Image.asset(
+                  _seatAvatarAsset(member),
+                  fit: BoxFit.cover,
+                  color: member.isAlive ? null : Colors.black54,
+                  colorBlendMode: member.isAlive ? null : BlendMode.darken,
+                  errorBuilder: (context, error, stackTrace) => Icon(
+                    member.isBot ? Icons.smart_toy : Icons.person,
+                    size: avatar * .55,
+                    color: member.isAlive
+                        ? const Color(0xffffd272)
+                        : Colors.white38,
+                  ),
                 ),
               ),
             ),
-          ),
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
-          padding: const EdgeInsets.all(5),
-          decoration: BoxDecoration(
-            color: member.isAlive
-                ? active
-                      ? Color.lerp(
-                          const Color(0xff5a3116),
-                          const Color(0xff8a521d),
-                          _bright ? 1 : .25,
-                        )
-                      : const Color(0xff2a1811)
-                : const Color(0xff16100d),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: active ? const Color(0xffffc451) : const Color(0xff63432e),
-              width: active ? 2 : 1,
-            ),
-            boxShadow: active && _bright
-                ? const [BoxShadow(color: Color(0x99ffb12e), blurRadius: 10)]
-                : null,
-          ),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final compact = constraints.maxHeight < 58;
-              final avatar = compact ? 24.0 : 34.0;
-              return Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  ClipOval(
-                    child: Image.asset(
-                      _seatAvatarAsset(member),
-                      width: avatar,
-                      height: avatar,
-                      fit: BoxFit.cover,
-                      color: member.isAlive ? null : Colors.black54,
-                      colorBlendMode: member.isAlive ? null : BlendMode.darken,
-                      errorBuilder: (context, error, stackTrace) => Icon(
-                        member.isBot ? Icons.smart_toy : Icons.person,
-                        size: compact ? 18 : 24,
-                        color: member.isAlive
-                            ? const Color(0xffffd272)
-                            : Colors.white38,
-                      ),
-                    ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: -2,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: const Color(0xcc160c08),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0x8863432e)),
+                ),
+                child: Text(
+                  member.isAlive
+                      ? '${active ? 'LUOT' : member.displayName} ${member.health}/${member.maxHealth} ${member.cardCount}'
+                      : '${member.displayName} OUT',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 7,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
                   ),
-                  if (!compact) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      active ? 'LUOT' : member.displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: active ? 8 : 9,
-                        fontWeight: FontWeight.w800,
-                        color: member.isAlive ? Colors.white : Colors.white38,
-                      ),
-                    ),
-                  ],
-                  if (!compact)
-                    Text(
-                      member.isAlive
-                          ? '${member.health}/${member.maxHealth} ${member.cardCount}'
-                          : 'OUT',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 7,
-                        color: Colors.white70,
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-        ),
+                ),
+              ),
+            ),
 
-        if (_showDeathEffect)
-          const Positioned.fill(
-            child: IgnorePointer(child: DeathEffectOverlay()),
-          ),
-        if (widget.isBangShooter)
-          const Positioned(
-            right: -14,
-            top: -24,
-            child: IgnorePointer(child: BangEffectOverlay(size: 62)),
-          ),
-        if (_showBangEffect)
-          const Positioned.fill(
-            child: IgnorePointer(child: BangEffectOverlay(size: 82)),
-          ),
-      ],
+            if (_showDeathEffect)
+              const Positioned.fill(
+                child: IgnorePointer(child: DeathEffectOverlay()),
+              ),
+            if (widget.isBangShooter)
+              const Positioned(
+                right: -14,
+                top: -24,
+                child: IgnorePointer(child: BangEffectOverlay(size: 62)),
+              ),
+            if (_showBangEffect)
+              const Positioned.fill(
+                child: IgnorePointer(child: BangEffectOverlay(size: 82)),
+              ),
+          ],
+        );
+      },
     );
   }
 }

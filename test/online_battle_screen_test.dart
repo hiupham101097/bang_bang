@@ -11,7 +11,7 @@ void main() {
     tester,
   ) async {
     final repository = _FakeBattleRepository();
-    for (final size in const [Size(360, 640), Size(320, 568)]) {
+    for (final size in const [Size(640, 360), Size(568, 320)]) {
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.binding.setSurfaceSize(size);
       await tester.pumpWidget(
@@ -21,6 +21,7 @@ void main() {
       );
       await tester.pump();
 
+      expect(find.byType(AppBar), findsNothing);
       expect(find.byType(SingleChildScrollView), findsNothing);
       expect(find.byType(GridView), findsNothing);
       final verticalLists = tester

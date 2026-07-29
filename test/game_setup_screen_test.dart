@@ -166,7 +166,7 @@ Future<void> _pumpSetupAtSizes(
   WidgetTester tester,
   OnlineRoomRepository repository,
 ) async {
-  for (final size in const [Size(360, 640), Size(320, 568)]) {
+  for (final size in const [Size(640, 360), Size(568, 320)]) {
     await _pumpSetup(tester, repository, size);
     _expectNoScrollOrOverflow(tester);
   }
