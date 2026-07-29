@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../domain/online_models.dart';
@@ -24,11 +26,18 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
   @override
   Future<PlayerProfile> ensureSignedIn() async {
     if (_profile != null) return _profile!;
-    final account = await FirebasePlayerProfileStore.instance.ensureAccount();
-    final profile = PlayerProfile(
-      uid: account.uid,
-      displayName: account.displayName,
-    );
+    PlayerProfile profile;
+    try {
+      final account = await FirebasePlayerProfileStore.instance.ensureAccount();
+      profile = PlayerProfile(
+        uid: account.uid,
+        displayName: account.displayName,
+      );
+    } catch (_) {
+      // Firebase Auth can be enabled later without stopping local/online
+      // matches today. The Worker receives a stable installation id instead.
+      profile = await _localFallbackProfile();
+    }
     final response = await _client.post(
       _uri('/v1/session'),
       headers: const {'content-type': 'application/json'},
@@ -42,6 +51,25 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
     if (_token == null) throw StateError('Không thể tạo phiên máy chủ.');
     _profile = profile;
     return profile;
+  }
+
+  Future<PlayerProfile> _localFallbackProfile() async {
+    final preferences = await SharedPreferences.getInstance();
+    var uid = preferences.getString('bangbang_fallback_player_id');
+    if (uid == null || uid.length < 8) {
+      const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+      final random = Random.secure();
+      uid = List.generate(
+        24,
+        (_) => alphabet[random.nextInt(alphabet.length)],
+      ).join();
+      await preferences.setString('bangbang_fallback_player_id', uid);
+    }
+    final resolvedUid = uid!;
+    return PlayerProfile(
+      uid: resolvedUid,
+      displayName: 'Cao bồi ${resolvedUid.substring(0, 5)}',
+    );
   }
 
   Future<Map<String, dynamic>> _post(

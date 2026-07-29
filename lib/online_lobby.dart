@@ -20,10 +20,12 @@ const ButtonStyle _compactButtonStyle = ButtonStyle(
 );
 
 const ButtonStyle _lobbyButtonStyle = ButtonStyle(
-  minimumSize: WidgetStatePropertyAll(Size(0, 38)),
-  padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 14)),
+  minimumSize: WidgetStatePropertyAll(Size(0, 28)),
+  padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 7)),
+  visualDensity: VisualDensity(horizontal: -3, vertical: -3),
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
   textStyle: WidgetStatePropertyAll(
-    TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+    TextStyle(fontSize: 9, fontWeight: FontWeight.w800),
   ),
 );
 
@@ -173,31 +175,10 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: const Color(0xff160c08),
     appBar: AppBar(
-      toolbarHeight: 40,
+      toolbarHeight: 30,
       title: const Text('PHÒNG ĐẤU'),
       actions: [
-        Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: Center(
-            child: BangStatusPill(
-              label: 'CLOUDFLARE',
-              color: const Color(0xff75d48a),
-              icon: Icons.cloud_outlined,
-            ),
-          ),
-        ),
-        AnimatedBuilder(
-          animation: model,
-          builder: (_, _) => Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Center(
-              child: Text(
-                'Online: ${model.stats.onlineUsers}',
-                style: const TextStyle(fontSize: 11, color: Color(0xffffd272)),
-              ),
-            ),
-          ),
-        ),
+        _appBarControls(),
       ],
     ),
     body: SafeArea(
@@ -208,7 +189,6 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
           child: Column(
             children: [
-              _controlBar(),
               if (model.error != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
@@ -220,7 +200,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
                     style: const TextStyle(color: Colors.redAccent),
                   ),
                 ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 5),
               Expanded(child: _rooms()),
             ],
           ),
@@ -229,62 +209,47 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
     ),
   );
 
-  Widget _controlBar() => BangPanel(
-    padding: const EdgeInsets.all(7),
-    child: LayoutBuilder(
-      builder: (context, constraints) {
-        final controls = [
-          SizedBox(
-            width: constraints.maxWidth >= 680 ? 250 : double.infinity,
-            height: 38,
-            child: TextField(
-              controller: code,
-              textCapitalization: TextCapitalization.characters,
-              style: const TextStyle(fontSize: 12),
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search, size: 18),
-                hintText: 'Nhập mã phòng',
-                filled: true,
-                isDense: true,
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 9,
-                ),
-              ),
-              onSubmitted: (_) => _joinCode(),
-            ),
+  Widget _appBarControls() => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      SizedBox(
+        width: 108,
+        height: 26,
+        child: TextField(
+          controller: code,
+          textCapitalization: TextCapitalization.characters,
+          style: const TextStyle(fontSize: 10),
+          decoration: const InputDecoration(
+            prefixIcon: Icon(Icons.search, size: 14),
+            hintText: 'Mã phòng',
+            filled: true,
+            isDense: true,
+            contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 5),
           ),
-          OutlinedButton(
-            style: _lobbyButtonStyle,
-            onPressed: _joinCode,
-            child: const Text('THAM GIA'),
-          ),
-          FilledButton.tonalIcon(
-            style: _lobbyButtonStyle,
-            onPressed: _quickJoin,
-            icon: const Icon(Icons.bolt, size: 16),
-            label: const Text('VÀO NHANH'),
-          ),
-          FilledButton.icon(
-            style: _lobbyButtonStyle,
-            onPressed: _create,
-            icon: const Icon(Icons.add_circle_outline, size: 16),
-            label: const Text('TẠO BÀN'),
-          ),
-        ];
-        return constraints.maxWidth >= 680
-            ? Row(mainAxisSize: MainAxisSize.min, children: _spaced(controls))
-            : Wrap(spacing: 7, runSpacing: 7, children: controls);
-      },
-    ),
-  );
-
-  List<Widget> _spaced(List<Widget> children) => [
-    for (var index = 0; index < children.length; index++) ...[
-      if (index > 0) const SizedBox(width: 7),
-      children[index],
+          onSubmitted: (_) => _joinCode(),
+        ),
+      ),
+      const SizedBox(width: 3),
+      OutlinedButton(
+        style: _lobbyButtonStyle,
+        onPressed: _joinCode,
+        child: const Text('VÀO'),
+      ),
+      const SizedBox(width: 3),
+      FilledButton.tonal(
+        style: _lobbyButtonStyle,
+        onPressed: _quickJoin,
+        child: const Text('NHANH'),
+      ),
+      const SizedBox(width: 3),
+      FilledButton(
+        style: _lobbyButtonStyle,
+        onPressed: _create,
+        child: const Text('TẠO'),
+      ),
+      const SizedBox(width: 6),
     ],
-  ];
+  );
 
   Widget _rooms() => RoomGrid(
     rooms: model.rooms,
@@ -313,11 +278,15 @@ class RoomGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) => GridView.builder(
-        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: constraints.maxWidth >= 1050 ? 245 : 300,
-          mainAxisExtent: 138,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: constraints.maxWidth >= 700
+              ? 5
+              : constraints.maxWidth >= 520
+              ? 4
+              : 3,
+          mainAxisExtent: constraints.maxWidth >= 700 ? 104 : 116,
+          crossAxisSpacing: 6,
+          mainAxisSpacing: 6,
         ),
         itemCount: rooms.length + 1 < 20 ? 20 : rooms.length + 1,
         itemBuilder: (context, index) {
@@ -338,7 +307,7 @@ class RoomGrid extends StatelessWidget {
                 ),
               ),
               child: Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   gradient: const LinearGradient(
@@ -373,16 +342,19 @@ class RoomGrid extends StatelessWidget {
                           ? Icons.meeting_room_outlined
                           : Icons.local_fire_department_outlined,
                     ),
-                    const SizedBox(height: 7),
+                    const SizedBox(height: 4),
                     Text(
                       '${room.totalCount}/${room.settings.maxPlayers} người  •  ${room.botCount} bot',
-                      style: const TextStyle(color: Color(0xffffd272)),
+                      style: const TextStyle(
+                        color: Color(0xffffd272),
+                        fontSize: 10,
+                      ),
                     ),
                     Text(
                       'Mã ${room.code}',
                       style: const TextStyle(
                         color: Colors.white70,
-                        fontSize: 12,
+                        fontSize: 9,
                       ),
                     ),
                   ],
