@@ -1,30 +1,17 @@
+import 'dart:math' as math;
+
 import 'package:bangbang/game_engine.dart';
 import 'package:bangbang/audio_service.dart';
 import 'package:bangbang/game_card_widget.dart';
+import 'package:bangbang/data/cloudflare_match_repository.dart';
 import 'package:bangbang/data/online_room_repository.dart';
 import 'package:bangbang/online_lobby.dart';
 import 'package:bangbang/splash_screen.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await Firebase.initializeApp();
-    if (const bool.fromEnvironment('USE_FIREBASE_EMULATORS')) {
-      final host = kIsWeb ? 'localhost' : '10.0.2.2';
-      await FirebaseAuth.instance.useAuthEmulator(host, 9099);
-      FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
-      FirebaseFunctions.instance.useFunctionsEmulator(host, 5001);
-    }
-  } catch (_) {
-    // The offline game works while Firebase is not configured for every platform.
-  }
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
@@ -34,7 +21,13 @@ void main() async {
 
 class BangBangApp extends StatelessWidget {
   const BangBangApp({super.key});
-  static final OnlineRoomRepository _rooms = HybridOnlineRoomRepository();
+  static const _matchUrl = String.fromEnvironment('CLOUDFLARE_MATCH_URL');
+  static final OnlineRoomRepository _rooms = _matchUrl.isNotEmpty
+      ? CloudflareMatchRepository(_matchUrl)
+      : const UnavailableOnlineRoomRepository(
+          'Chưa cấu hình Cloudflare Worker. Chạy app với '
+          '--dart-define=CLOUDFLARE_MATCH_URL=https://<worker>.workers.dev',
+        );
   @override
   Widget build(BuildContext context) => MaterialApp(
     debugShowCheckedModeBanner: false,
@@ -245,28 +238,45 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class GameTable extends StatefulWidget {
-  const GameTable({super.key});
+  const GameTable({super.key, this.playerCount = 4})
+    : assert(playerCount >= 4 && playerCount <= 8);
+
+  final int playerCount;
+
   @override
   State<GameTable> createState() => _GameTableState();
 }
 
 class _GameTableState extends State<GameTable> {
-  GameEngine game = GameEngine.offline();
+  late GameEngine game;
   int selected = 0;
+  bool choosingTarget = false;
   bool sound = true, revealRoles = false;
+
+  @override
+  void initState() {
+    super.initState();
+    game = GameEngine.offline(playerCount: widget.playerCount);
+  }
+
   void _click({bool attack = false}) {
     if (sound) {
       SystemSound.play(attack ? SystemSoundType.alert : SystemSoundType.click);
     }
   }
 
-  void _play(GamePlayer p) {
+  void _play(GamePlayer? target) {
     if (game.human.hand.isEmpty) return;
     final card = game.human.hand[selected.clamp(0, game.human.hand.length - 1)];
-    game.playHumanCard(selected, card.needsTarget ? p : null);
+    if (card.needsTarget && target == null) {
+      setState(() => choosingTarget = true);
+      return;
+    }
+    game.playHumanCard(selected, card.needsTarget ? target : null);
     selected = selected
         .clamp(0, game.human.hand.isEmpty ? 0 : game.human.hand.length - 1)
         .toInt();
+    choosingTarget = false;
     _click(attack: card.type == CardType.bang);
     setState(() {});
   }
@@ -357,39 +367,50 @@ class _GameTableState extends State<GameTable> {
       ],
     ),
   );
-  Widget _field(BoxConstraints c) => Stack(
-    children: [
-      Positioned(top: 4, left: 12, child: _player(game.players[1])),
-      Positioned(top: 4, right: 12, child: _player(game.players[2])),
-      Positioned(
-        top: c.maxHeight * .48,
-        right: 12,
-        child: _player(game.players[3]),
-      ),
-      Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _event(),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _deck('BỘ BÀI', '🂠', game.deck.length),
-                const SizedBox(width: 18),
-                _deck('ĐÃ ĐÁNH', '🃏', game.discard.length),
-              ],
-            ),
-            const SizedBox(height: 8),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: _message(),
-            ),
-          ],
+  Widget _field(BoxConstraints c) {
+    final opponents = game.players.where((player) => !player.isHuman).toList();
+    return Stack(
+      children: [
+        for (var index = 0; index < opponents.length; index++)
+          () {
+            final angle =
+                -math.pi / 2 + (2 * math.pi * index / opponents.length);
+            final x =
+                c.maxWidth / 2 + math.cos(angle) * (c.maxWidth * .36) - 75;
+            final y =
+                c.maxHeight / 2 + math.sin(angle) * (c.maxHeight * .33) - 32;
+            return Positioned(
+              left: x.clamp(4.0, c.maxWidth - 154),
+              top: y.clamp(4.0, c.maxHeight - 72),
+              child: _player(opponents[index]),
+            );
+          }(),
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _event(),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _deck('BỘ BÀI', '🂠', game.deck.length),
+                  const SizedBox(width: 18),
+                  _deck('ĐÃ ĐÁNH', '🃏', game.discard.length),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: _message(),
+              ),
+            ],
+          ),
         ),
-      ),
-    ],
-  );
+      ],
+    );
+  }
+
   Widget _event() => Container(
     padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 7),
     decoration: BoxDecoration(
@@ -438,7 +459,7 @@ class _GameTableState extends State<GameTable> {
     ),
   );
   Widget _player(GamePlayer p) => GestureDetector(
-    onTap: () => _play(p),
+    onTap: choosingTarget && p.alive && !p.isHuman ? () => _play(p) : null,
     child: Opacity(
       opacity: p.alive ? 1 : .42,
       child: Container(
@@ -448,10 +469,12 @@ class _GameTableState extends State<GameTable> {
           color: const Color(0xff25130d).withValues(alpha: .92),
           borderRadius: BorderRadius.circular(15),
           border: Border.all(
-            color: p.role == PlayerRole.sheriff
+            color: choosingTarget && !p.isHuman && p.alive
+                ? const Color(0xffff5c43)
+                : p.role == PlayerRole.sheriff
                 ? const Color(0xffffcf5b)
                 : Colors.white70,
-            width: 2,
+            width: choosingTarget && !p.isHuman && p.alive ? 3 : 2,
           ),
         ),
         child: Column(
@@ -548,13 +571,23 @@ class _GameTableState extends State<GameTable> {
         ),
         const SizedBox(width: 8),
         FilledButton.icon(
-          onPressed: () {
-            game.endHumanTurn();
-            _click(attack: true);
-            setState(() {});
-          },
-          icon: const Icon(Icons.skip_next),
-          label: const Text('KẾT THÚC'),
+          onPressed: game.human.hand.isEmpty ? null : () => _play(null),
+          icon: Icon(
+            choosingTarget ? Icons.ads_click : Icons.play_arrow_rounded,
+          ),
+          label: Text(choosingTarget ? 'CHỌN MỤC TIÊU' : 'ĐÁNH / DÙNG'),
+        ),
+        const SizedBox(width: 6),
+        OutlinedButton.icon(
+          onPressed: choosingTarget
+              ? () => setState(() => choosingTarget = false)
+              : () {
+                  game.endHumanTurn();
+                  _click();
+                  setState(() {});
+                },
+          icon: Icon(choosingTarget ? Icons.close : Icons.skip_next, size: 16),
+          label: Text(choosingTarget ? 'HỦY' : 'KẾT THÚC'),
         ),
       ],
     ),
@@ -595,7 +628,7 @@ class _GameTableState extends State<GameTable> {
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: () => setState(() {
-                  game = GameEngine.offline();
+                  game = GameEngine.offline(playerCount: widget.playerCount);
                   selected = 0;
                 }),
                 child: const Text('CHƠI VÁN MỚI'),

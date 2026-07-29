@@ -7,6 +7,7 @@ import 'data/online_room_repository.dart';
 import 'domain/online_models.dart';
 import 'game_setup_screen.dart';
 import 'online_battle_screen.dart';
+import 'ui/bang_ui.dart';
 
 const ButtonStyle _compactButtonStyle = ButtonStyle(
   minimumSize: WidgetStatePropertyAll(Size(0, 26)),
@@ -172,6 +173,16 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
       toolbarHeight: 40,
       title: const Text('PHÒNG ĐẤU'),
       actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: Center(
+            child: BangStatusPill(
+              label: 'CLOUDFLARE',
+              color: const Color(0xff75d48a),
+              icon: Icons.cloud_outlined,
+            ),
+          ),
+        ),
         AnimatedBuilder(
           animation: model,
           builder: (_, _) => Padding(
@@ -212,14 +223,8 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
     ),
   );
 
-  Widget _controlBar() => Container(
-    width: double.infinity,
+  Widget _controlBar() => BangPanel(
     padding: const EdgeInsets.all(7),
-    decoration: BoxDecoration(
-      color: const Color(0xff26150e),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: const Color(0xff6c4425)),
-    ),
     child: LayoutBuilder(
       builder: (context, constraints) {
         final controls = [
@@ -351,6 +356,18 @@ class RoomGrid extends StatelessWidget {
                       ),
                     ),
                     const Spacer(),
+                    BangStatusPill(
+                      label: room.status == RoomStatus.waiting
+                          ? 'ĐANG CHỜ'
+                          : 'ĐANG ĐẤU',
+                      color: room.status == RoomStatus.waiting
+                          ? const Color(0xff75d48a)
+                          : bangGold,
+                      icon: room.status == RoomStatus.waiting
+                          ? Icons.meeting_room_outlined
+                          : Icons.local_fire_department_outlined,
+                    ),
+                    const SizedBox(height: 7),
                     Text(
                       '${room.totalCount}/${room.settings.maxPlayers} người  •  ${room.botCount} bot',
                       style: const TextStyle(color: Color(0xffffd272)),
@@ -481,7 +498,7 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
   }
 
   Future<void> _startTestGame(OnlineRoom current) async {
-    final requiredBots = 4 - current.totalCount;
+    final requiredBots = current.settings.maxPlayers - current.totalCount;
     for (var index = 0; index < requiredBots; index++) {
       await _call(() => widget.repository.addBot(current.id, 'normal'));
     }
@@ -600,6 +617,7 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
     return Scaffold(
       backgroundColor: const Color(0xff160c08),
       appBar: AppBar(
+        toolbarHeight: 44,
         title: Text('${current.settings.roomName} • ${current.code}'),
       ),
       body: SafeArea(
@@ -729,12 +747,27 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
     );
   }
 
-  Widget _seat(RoomMember? member, int index, bool isHost) => Card(
-    color: member?.isBot == true
-        ? const Color(0xff26331d)
-        : member?.isReady == true
-        ? const Color(0xff1e3824)
-        : const Color(0xff352014),
+  Widget _seat(RoomMember? member, int index, bool isHost) => AnimatedContainer(
+    duration: const Duration(milliseconds: 180),
+    decoration: BoxDecoration(
+      color: member?.isBot == true
+          ? const Color(0xff26331d)
+          : member?.isReady == true
+          ? const Color(0xff1e3824)
+          : const Color(0xff352014),
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(
+        color: member == null
+            ? const Color(0xff725037)
+            : member.isReady
+            ? const Color(0xff75d48a)
+            : const Color(0xffb88957),
+        width: member?.isReady == true ? 2 : 1,
+      ),
+      boxShadow: const [
+        BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 3)),
+      ],
+    ),
     child: Padding(
       padding: const EdgeInsets.all(10),
       child: member == null

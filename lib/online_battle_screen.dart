@@ -9,6 +9,7 @@ import 'data/online_room_repository.dart';
 import 'domain/online_models.dart';
 import 'game_card_widget.dart';
 import 'game_engine.dart';
+import 'ui/bang_ui.dart';
 import 'voice_chat_service.dart';
 
 /// Minimal authoritative online table. Card effects stay in Cloud Functions;
@@ -24,6 +25,14 @@ class OnlineBattleScreen extends StatelessWidget {
   final OnlineRoom room;
   static bool _firstTutorialHandled = false;
   static bool _hideTutorialForSession = false;
+  // The hand is fed by a stream and this keeps the selected card stable while
+  // the player decides whether to play it.  A tap must never play a card
+  // immediately: the player confirms with the action button below the hand.
+  static final Map<String, ValueNotifier<String?>> _selectedHandCards = {};
+
+  static ValueNotifier<String?> _selectedHandCard(String roomId) {
+    return _selectedHandCards.putIfAbsent(roomId, () => ValueNotifier(null));
+  }
 
   void _showFirstTimeTutorial(BuildContext context) {
     var step = 0;
@@ -407,7 +416,7 @@ class OnlineBattleScreen extends StatelessWidget {
                 Text(
                   joinedThisRoom
                       ? 'Đang kết nối ${voice.participantCount} người chơi khác.'
-                      : 'Âm thanh đi trực tiếp giữa người chơi; Firebase chỉ truyền tín hiệu kết nối.',
+                      : 'Voice đang chờ signaling realtime qua Cloudflare.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.white70),
                 ),
@@ -466,6 +475,8 @@ class OnlineBattleScreen extends StatelessWidget {
     String? targetPlayerId;
     final needsTarget =
         cardId.startsWith('bang_') ||
+        (cardId.startsWith('dodge_') &&
+            room.memberFor(playerId)?.characterId == 'calamity_janet') ||
         cardId.startsWith('jail_') ||
         cardId.startsWith('panico_') ||
         cardId.startsWith('cat_balou_') ||
@@ -488,7 +499,10 @@ class OnlineBattleScreen extends StatelessWidget {
               ),
               for (final member in room.members.where((member) {
                 if (member.id == playerId || !member.isAlive) return false;
-                if (!cardId.startsWith('bang_')) return true;
+                if (!cardId.startsWith('bang_') &&
+                    !cardId.startsWith('dodge_')) {
+                  return true;
+                }
                 final distance = _distanceBetween(room, playerId, member.id);
                 return _targetBlockedReason(
                       room: room,
@@ -910,6 +924,7 @@ class OnlineBattleScreen extends StatelessWidget {
       }
       final playerId = profileSnapshot.data?.uid;
       final activePlayer = room.memberFor(room.currentTurnPlayerId ?? '');
+      final currentPlayer = playerId == null ? null : room.memberFor(playerId);
       final isMyTurn = playerId != null && playerId == room.currentTurnPlayerId;
       final canPlay = isMyTurn && room.phase == 'play_phase';
       final phase = room.phase;
@@ -920,9 +935,10 @@ class OnlineBattleScreen extends StatelessWidget {
       return Scaffold(
         backgroundColor: const Color(0xff160c08),
         appBar: AppBar(
+          toolbarHeight: 42,
           title: const Text('BANG BANG — Bàn đấu'),
           actions: [
-            if (room.settings.voiceEnabled)
+            if (room.settings.voiceEnabled && GameVoiceChat.isAvailable)
               AnimatedBuilder(
                 animation: GameVoiceChat.instance,
                 builder: (context, _) {
@@ -943,7 +959,7 @@ class OnlineBattleScreen extends StatelessWidget {
                   );
                 },
               ),
-            if (room.settings.chatEnabled)
+            if (room.settings.chatEnabled && GameVoiceChat.isAvailable)
               IconButton(
                 tooltip: 'Chat phòng',
                 onPressed: () => _showChat(context),
@@ -965,9 +981,17 @@ class OnlineBattleScreen extends StatelessWidget {
         ),
         body: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+            child: ListView(
               children: [
+                BangStatusPill(
+                  label: isMyTurn ? 'LƯỢT CỦA BẠN' : 'ĐANG THEO DÕI',
+                  color: isMyTurn ? bangGold : Colors.white70,
+                  icon: isMyTurn
+                      ? Icons.local_fire_department_outlined
+                      : Icons.visibility_outlined,
+                ),
+                const SizedBox(height: 7),
                 Text(
                   activePlayer == null
                       ? _phaseLabel(phase)
@@ -975,7 +999,7 @@ class OnlineBattleScreen extends StatelessWidget {
                       ? 'ĐẾN LƯỢT CỦA BẠN'
                       : 'ĐANG CHỜ ${activePlayer.displayName.toUpperCase()}',
                   style: const TextStyle(
-                    fontSize: 20,
+                    fontSize: 17,
                     color: Color(0xffffc451),
                   ),
                 ),
@@ -983,7 +1007,9 @@ class OnlineBattleScreen extends StatelessWidget {
                 _TurnCountdown(
                   deadline: room.turnDeadlineAt,
                   isMyTurn: isMyTurn,
-                  onExpired: () => _call(context, 'resolveTurnTimeout'),
+                  // Timeout resolution is server-authoritative. The client only
+                  // paints the remaining time and waits for the next snapshot.
+                  onExpired: () {},
                 ),
                 if (isMyTurn && room.phase == 'play_phase')
                   Text(
@@ -992,23 +1018,12 @@ class OnlineBattleScreen extends StatelessWidget {
                   ),
                 const SizedBox(height: 10),
                 _TurnSteps(phase: phase),
-                const SizedBox(height: 12),
-                _PlayerTable(
-                  members: room.members,
-                  currentTurnPlayerId: room.currentTurnPlayerId,
-                  latestPublicLog: room.publicLog.isEmpty
-                      ? null
-                      : room.publicLog.last,
+                const SizedBox(height: 8),
+                _CentralActionArea(
+                  repository: repository,
+                  room: room,
+                  playerId: playerId,
                 ),
-                if (_latestPublicCardId(room) != null) ...[
-                  const SizedBox(height: 12),
-                  _PublicCardStage(
-                    cardId: _latestPublicCardId(room)!,
-                    summary: room.publicLog.isEmpty
-                        ? 'Lá bài mới được đánh'
-                        : _publicLogLabel(room, room.publicLog.last),
-                  ),
-                ],
                 if (room.publicLog.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   SizedBox(
@@ -1034,7 +1049,9 @@ class OnlineBattleScreen extends StatelessWidget {
                     ),
                   ),
                 ],
-                const SizedBox(height: 20),
+                const SizedBox(height: 10),
+                _EquipmentBar(equipment: currentPlayer?.equipment ?? const []),
+                const SizedBox(height: 8),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
@@ -1059,85 +1076,225 @@ class OnlineBattleScreen extends StatelessWidget {
                         child: Text('Chưa có bài hoặc đang chờ đồng bộ.'),
                       );
                     }
-                    return SizedBox(
-                      height: 112,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: cards.length,
-                        separatorBuilder: (_, _) => const SizedBox(width: 7),
-                        itemBuilder: (context, index) {
-                          final cardId = cards[index];
-                          final canDiscard =
-                              isMyTurn &&
-                              phase == 'discard_phase' &&
-                              discardRequired > 0;
-                          final isBang = cardId.startsWith('bang_');
-                          final unlimitedBang =
-                              activePlayer?.characterId == 'willy_the_kid' ||
-                              activePlayer?.equipment.any(
-                                    (card) => card.startsWith('volcanic_'),
-                                  ) ==
-                                  true;
-                          final bangBlocked =
-                              isBang &&
-                              room.bangUsedThisTurn >= 1 &&
-                              !unlimitedBang;
-                          final enabled =
-                              (canPlay && !bangBlocked) || canDiscard;
-                          final actionLabel = bangBlocked
-                              ? 'ĐÃ DÙNG BANG'
-                              : phase == 'discard_phase'
-                              ? 'BỎ'
-                              : _isEquipmentCard(cardId)
-                              ? 'ĐẶT'
-                              : 'ĐÁNH';
-                          return Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              GameCardWidget(
-                                card: _publicGameCard(cardId),
-                                width: 70,
-                                isEnabled: enabled,
-                                onTap: !enabled
-                                    ? null
-                                    : () => canPlay
-                                          ? _playCard(context, cardId, playerId)
-                                          : _discardExcessCards(
-                                              context,
-                                              cards,
-                                              discardRequired,
-                                            ),
-                              ),
-                              Positioned(
-                                left: 4,
-                                right: 4,
-                                bottom: 3,
-                                child: IgnorePointer(
-                                  child: DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xaa211109),
-                                      borderRadius: BorderRadius.circular(4),
+                    final selectedNotifier = _selectedHandCard(room.id);
+                    if (selectedNotifier.value != null &&
+                        !cards.contains(selectedNotifier.value)) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (!cards.contains(selectedNotifier.value)) {
+                          selectedNotifier.value = null;
+                        }
+                      });
+                    }
+                    return ValueListenableBuilder<String?>(
+                      valueListenable: selectedNotifier,
+                      builder: (context, selectedCardId, _) => Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            height: 112,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: cards.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(width: 7),
+                              itemBuilder: (context, index) {
+                                final cardId = cards[index];
+                                final canDiscard =
+                                    isMyTurn &&
+                                    phase == 'discard_phase' &&
+                                    discardRequired > 0;
+                                final isBang = cardId.startsWith('bang_');
+                                final unlimitedBang =
+                                    activePlayer?.characterId ==
+                                        'willy_the_kid' ||
+                                    activePlayer?.equipment.any(
+                                          (card) =>
+                                              card.startsWith('volcanic_'),
+                                        ) ==
+                                        true;
+                                final bangBlocked =
+                                    isBang &&
+                                    room.bangUsedThisTurn >= 1 &&
+                                    !unlimitedBang;
+                                final enabled =
+                                    (canPlay && !bangBlocked) || canDiscard;
+                                final actionLabel = bangBlocked
+                                    ? 'ĐÃ DÙNG BANG'
+                                    : phase == 'discard_phase'
+                                    ? 'BỎ'
+                                    : _isEquipmentCard(cardId)
+                                    ? 'ĐẶT'
+                                    : 'ĐÁNH';
+                                return Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    GameCardWidget(
+                                      card: _publicGameCard(cardId),
+                                      width: 70,
+                                      isSelected: selectedCardId == cardId,
+                                      isEnabled: enabled,
+                                      onTap: !enabled
+                                          ? null
+                                          : () => selectedNotifier.value =
+                                                selectedCardId == cardId
+                                                ? null
+                                                : cardId,
                                     ),
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 2,
-                                      ),
-                                      child: Text(
-                                        actionLabel,
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 8,
-                                          fontWeight: FontWeight.w800,
+                                    Positioned(
+                                      left: 4,
+                                      right: 4,
+                                      bottom: 3,
+                                      child: IgnorePointer(
+                                        child: DecoratedBox(
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xaa211109),
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 2,
+                                            ),
+                                            child: Text(
+                                              actionLabel,
+                                              textAlign: TextAlign.center,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 8,
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          );
-                        },
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          if (selectedCardId == null)
+                            const Text(
+                              'Chạm một lá bài để chọn, sau đó xác nhận hành động.',
+                              style: TextStyle(color: Colors.white70),
+                            )
+                          else
+                            Builder(
+                              builder: (context) {
+                                final isBang = selectedCardId.startsWith(
+                                  'bang_',
+                                );
+                                final unlimitedBang =
+                                    activePlayer?.characterId ==
+                                        'willy_the_kid' ||
+                                    activePlayer?.equipment.any(
+                                          (card) =>
+                                              card.startsWith('volcanic_'),
+                                        ) ==
+                                        true;
+                                final bangBlocked =
+                                    isBang &&
+                                    room.bangUsedThisTurn >= 1 &&
+                                    !unlimitedBang;
+                                final canDiscard =
+                                    isMyTurn &&
+                                    phase == 'discard_phase' &&
+                                    discardRequired > 0;
+                                final canConfirm =
+                                    canDiscard || (canPlay && !bangBlocked);
+                                final actionLabel = canDiscard
+                                    ? 'BỎ BÀI'
+                                    : _isEquipmentCard(selectedCardId)
+                                    ? 'ĐẶT THẺ'
+                                    : 'ĐÁNH';
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      width: double.infinity,
+                                      margin: const EdgeInsets.only(bottom: 7),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 9,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xff2b170e),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: const Color(0xff76502e),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        '${_cardLabel(selectedCardId)} · ${_cardDescription(selectedCardId)}',
+                                        style: const TextStyle(
+                                          color: Color(0xffffe3a5),
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: OutlinedButton(
+                                            onPressed: () =>
+                                                selectedNotifier.value = null,
+                                            child: const Text('HỦY'),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          flex: 2,
+                                          child: FilledButton.icon(
+                                            onPressed: !canConfirm
+                                                ? null
+                                                : () async {
+                                                    final card = selectedCardId;
+                                                    if (canDiscard) {
+                                                      await _discardExcessCards(
+                                                        context,
+                                                        cards,
+                                                        discardRequired,
+                                                      );
+                                                    } else {
+                                                      await _playCard(
+                                                        context,
+                                                        card,
+                                                        playerId,
+                                                      );
+                                                    }
+                                                    selectedNotifier.value =
+                                                        null;
+                                                  },
+                                            icon: Icon(
+                                              canDiscard
+                                                  ? Icons.delete_outline
+                                                  : Icons.play_arrow_rounded,
+                                            ),
+                                            label: Text(actionLabel),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (isBang) ...[
+                                      const SizedBox(height: 5),
+                                      Text(
+                                        bangBlocked
+                                            ? 'Mỗi lượt chỉ dùng 1 BANG, trừ khi có kỹ năng hoặc Volcanic.'
+                                            : 'Bấm ĐÁNH để chọn mục tiêu trong tầm bắn.',
+                                        style: const TextStyle(
+                                          color: Colors.amberAccent,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                );
+                              },
+                            ),
+                        ],
                       ),
                     );
                   },
@@ -1267,11 +1424,11 @@ class OnlineBattleScreen extends StatelessWidget {
                             leading: action['actionType'] == 'bang'
                                 ? _ResponseCountdown(
                                     deadline: action['responseDeadlineAt'],
-                                    onExpired: () => _callPayload(
-                                      context,
-                                      'resolveExpiredResponse',
-                                      {'pendingActionId': action['id']},
-                                    ),
+                                    // Cloud Functions resolve an expired
+                                    // response. Never apply combat from a
+                                    // widget timer, otherwise reconnects can
+                                    // resolve the same action twice.
+                                    onExpired: () {},
                                   )
                                 : null,
                             title: Text(
@@ -1551,6 +1708,257 @@ String? _latestPublicCardId(OnlineRoom room) {
   }
   return room.discardTopCardId;
 }
+
+/// The centre of the table is deliberately separate from the hand and the
+/// equipment row.  It is the public, transient area: everybody can see the
+/// action card, who played it, who must respond, the draw pile and discard.
+class _CentralActionArea extends StatelessWidget {
+  const _CentralActionArea({
+    required this.repository,
+    required this.room,
+    required this.playerId,
+  });
+
+  final OnlineRoomRepository repository;
+  final OnlineRoom room;
+  final String? playerId;
+
+  @override
+  Widget build(
+    BuildContext context,
+  ) => StreamBuilder<List<Map<String, dynamic>>>(
+    stream: repository.watchPendingActions(room.id),
+    builder: (context, snapshot) {
+      final action =
+          (snapshot.data ?? const <Map<String, dynamic>>[]).firstOrNull;
+      final actionCardId =
+          action?['cardId'] as String? ?? _latestPublicCardId(room);
+      final actionType = action?['actionType'] as String?;
+      final actor = room.memberFor(action?['actorPlayerId'] as String? ?? '');
+      final target = room.memberFor(
+        action?['currentTargetId'] as String? ??
+            action?['targetPlayerId'] as String? ??
+            '',
+      );
+      final summary = action == null
+          ? (room.publicLog.isEmpty
+                ? 'Chờ hành động đầu tiên của trận đấu.'
+                : _publicLogLabel(room, room.publicLog.last))
+          : target == null
+          ? '${actor?.displayName ?? 'Người chơi'} đang dùng ${_actionLabel(actionType)}.'
+          : '${actor?.displayName ?? 'Người chơi'} dùng ${_actionLabel(actionType)} vào ${target.displayName}.';
+
+      return Column(
+        children: [
+          _PlayerTable(
+            members: room.members,
+            currentTurnPlayerId: room.currentTurnPlayerId,
+            latestPublicLog: room.publicLog.isEmpty
+                ? null
+                : room.publicLog.last,
+          ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              _PileMarker(
+                icon: Icons.layers_outlined,
+                label: 'BỘ RÚT',
+                detail: 'Úp',
+              ),
+              const SizedBox(width: 12),
+              if (actionCardId != null)
+                _PublicCardStage(cardId: actionCardId, summary: summary)
+              else
+                _EmptyActionStage(summary: summary),
+              const SizedBox(width: 12),
+              _PileMarker(
+                icon: Icons.delete_sweep_outlined,
+                label: 'BÀI BỎ',
+                detail: room.discardTopCardId == null
+                    ? 'Trống'
+                    : _cardLabel(room.discardTopCardId!),
+              ),
+            ],
+          ),
+          if (action != null) ...[
+            const SizedBox(height: 5),
+            _PublicResponseLine(
+              action: action,
+              actorName: actor?.displayName,
+              targetName: target?.displayName,
+            ),
+          ],
+        ],
+      );
+    },
+  );
+}
+
+class _PileMarker extends StatelessWidget {
+  const _PileMarker({
+    required this.icon,
+    required this.label,
+    required this.detail,
+  });
+
+  final IconData icon;
+  final String label;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 62,
+    child: Column(
+      children: [
+        Container(
+          width: 42,
+          height: 54,
+          decoration: BoxDecoration(
+            color: const Color(0xff311b10),
+            borderRadius: BorderRadius.circular(7),
+            border: Border.all(color: const Color(0xff9a6a35)),
+          ),
+          child: Icon(icon, color: const Color(0xffffd272), size: 22),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w800),
+        ),
+        Text(
+          detail,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 7, color: Colors.white60),
+        ),
+      ],
+    ),
+  );
+}
+
+class _EmptyActionStage extends StatelessWidget {
+  const _EmptyActionStage({required this.summary});
+  final String summary;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 255,
+    height: 80,
+    alignment: Alignment.center,
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: const Color(0xff2b170e),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: const Color(0xff6e492a)),
+    ),
+    child: Text(
+      summary,
+      textAlign: TextAlign.center,
+      maxLines: 3,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(color: Colors.white70, fontSize: 11),
+    ),
+  );
+}
+
+class _PublicResponseLine extends StatelessWidget {
+  const _PublicResponseLine({
+    required this.action,
+    required this.actorName,
+    required this.targetName,
+  });
+
+  final Map<String, dynamic> action;
+  final String? actorName;
+  final String? targetName;
+
+  @override
+  Widget build(BuildContext context) {
+    final type = action['actionType'] as String? ?? 'action';
+    final waitingFor = targetName ?? 'người chơi';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xff4c1d16),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.redAccent.withValues(alpha: .65)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.timer_outlined, size: 15, color: Colors.redAccent),
+          const SizedBox(width: 5),
+          Text(
+            type == 'bang'
+                ? 'Đang chờ $waitingFor phản ứng · 8 giây'
+                : '${actorName ?? 'Người chơi'} đang xử lý ${_actionLabel(type)}',
+            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EquipmentBar extends StatelessWidget {
+  const _EquipmentBar({required this.equipment});
+  final List<String> equipment;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text(
+        'TRANG BỊ / THẺ ĐÃ ĐẶT',
+        style: TextStyle(
+          fontSize: 11,
+          color: Color(0xffffd272),
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      const SizedBox(height: 4),
+      SizedBox(
+        height: 54,
+        child: equipment.isEmpty
+            ? const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Chưa có trang bị được đặt.',
+                  style: TextStyle(color: Colors.white54, fontSize: 11),
+                ),
+              )
+            : ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: equipment.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 6),
+                itemBuilder: (context, index) {
+                  final cardId = equipment[index];
+                  return Tooltip(
+                    message: _cardLabel(cardId),
+                    child: GameCardWidget(
+                      card: _publicGameCard(cardId),
+                      width: 38,
+                      isEnabled: false,
+                    ),
+                  );
+                },
+              ),
+      ),
+    ],
+  );
+}
+
+String _actionLabel(String? actionType) => switch (actionType) {
+  'bang' => 'BANG!',
+  'gatling' => 'GATLING',
+  'indiani' => 'INDIANS',
+  'duello' => 'ĐẤU SÚNG',
+  'general_store' => 'CỬA HÀNG',
+  'judgment' => 'PHÁN XÉT',
+  _ => 'HÀNH ĐỘNG',
+};
 
 class _PlayerTable extends StatelessWidget {
   const _PlayerTable({
@@ -1978,6 +2386,64 @@ String _cardLabel(String cardId) => cardId
     .replaceAll('DILIZENZA', 'DILIGENZA')
     .toUpperCase();
 
+String _cardDescription(String cardId) {
+  if (cardId.startsWith('bang_')) {
+    return 'Bắn một mục tiêu trong tầm.';
+  }
+  if (cardId.startsWith('dodge_')) {
+    return 'Né một đòn BANG! đang nhắm vào bạn.';
+  }
+  if (cardId.startsWith('beer_')) {
+    return 'Hồi 1 máu, không vượt máu tối đa.';
+  }
+  if (cardId.startsWith('gatling_')) {
+    return 'Mọi đối thủ phải dùng NÉ hoặc mất máu.';
+  }
+  if (cardId.startsWith('indiani_')) {
+    return 'Mọi đối thủ dùng BANG hoặc mất máu.';
+  }
+  if (cardId.startsWith('duello_')) {
+    return 'Chọn đối thủ để luân phiên dùng BANG.';
+  }
+  if (cardId.startsWith('jail_')) {
+    return 'Nhốt một người chơi không phải Cảnh sát trưởng.';
+  }
+  if (cardId.startsWith('dynamite_')) {
+    return 'Đặt trước mặt bạn, phán xét ở đầu lượt.';
+  }
+  if (cardId.startsWith('barrel_')) {
+    return 'Phán xét Cơ để tự động né BANG.';
+  }
+  if (cardId.startsWith('mustang_')) {
+    return 'Người khác tính xa bạn thêm 1.';
+  }
+  if (cardId.startsWith('appaloosa_')) {
+    return 'Bạn tính gần mọi mục tiêu hơn 1.';
+  }
+  if (cardId.startsWith('panico_')) {
+    return 'Lấy ngẫu nhiên bài tay hoặc trang bị.';
+  }
+  if (cardId.startsWith('cat_balou_')) {
+    return 'Hủy bài tay hoặc trang bị của mục tiêu.';
+  }
+  if (cardId.startsWith('dilizenza_')) {
+    return 'Rút thêm 2 lá.';
+  }
+  if (cardId.startsWith('wells_fargo_')) {
+    return 'Rút thêm 3 lá.';
+  }
+  if (cardId.startsWith('general_store_')) {
+    return 'Mỗi người lần lượt chọn một lá.';
+  }
+  if (cardId.startsWith('saloon_')) {
+    return 'Hồi 1 máu cho mọi người còn sống.';
+  }
+  if (_isEquipmentCard(cardId)) {
+    return 'Đặt công khai vào thanh trang bị.';
+  }
+  return 'Dùng theo hiệu ứng của lá bài.';
+}
+
 bool _isEquipmentCard(String cardId) => [
   'gun_range_',
   'volcanic_',
@@ -2249,7 +2715,11 @@ class _ResponseCountdownState extends State<_ResponseCountdown> {
 
   void _tick() {
     final value = widget.deadline;
-    final date = value == null ? null : value.toDate() as DateTime;
+    final date = switch (value) {
+      DateTime value => value,
+      num value => DateTime.fromMillisecondsSinceEpoch(value.toInt()),
+      _ => value == null ? null : value.toDate() as DateTime,
+    };
     final seconds = date == null
         ? 0
         : (date.difference(DateTime.now()).inMilliseconds / 1000).ceil().clamp(

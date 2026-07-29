@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "blue-frog-fec8",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-29",
+  "durable_objects": {
+    "bindings": [
+      { "name": "MATCH", "class_name": "BangBangMatch" },
+      { "name": "DIRECTORY", "class_name": "BangBangDirectory" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["BangBangMatch", "BangBangDirectory"] }
+  ]
+}
