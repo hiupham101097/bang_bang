@@ -40,9 +40,7 @@ void main() {
           SetupChoice(id: 'role_0', value: 'sheriff'),
           SetupChoice(id: 'role_1', value: '', pickedBy: 'p2'),
         ],
-        characterDeck: [
-          SetupChoice(id: 'character_0', value: 'black_jack'),
-        ],
+        characterDeck: [SetupChoice(id: 'character_0', value: 'black_jack')],
         characterOptions: [],
       );
 
@@ -53,10 +51,10 @@ void main() {
       expect(state.characterDeck.single.value, 'black_jack');
     });
 
-    test('role setup exposes one extra face-down choice', () {
+    test('role setup exposes one face-down choice per player', () {
       for (final playerCount in [4, 5, 6, 7, 8]) {
         final choices = List<SetupChoice>.generate(
-          playerCount + 1,
+          playerCount,
           (index) => SetupChoice(id: 'role_$index', value: 'deputy'),
         );
         final state = PrivateSetupState(
@@ -66,7 +64,7 @@ void main() {
           characterOptions: const [],
         );
 
-        expect(state.roleDeck, hasLength(playerCount + 1));
+        expect(state.roleDeck, hasLength(playerCount));
       }
     });
   });

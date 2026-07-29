@@ -7,7 +7,6 @@ export interface Env {
 }
 
 type Role = "sheriff" | "deputy" | "outlaw" | "renegade";
-type SetupRole = Role | "blank";
 type Phase = "lobby" | "role_selection" | "character_selection" | "choosing_character" | "turn_start" | "play_phase" | "waiting_response" | "discard_phase" | "game_over";
 type Command =
   | "join"
@@ -88,8 +87,8 @@ const roles = (count: number): Role[] => {
   const police = Math.floor((count - 1) / 2);
   return ["sheriff", ...Array(police - 1).fill("deputy"), ...Array(count - police - 1).fill("outlaw"), "renegade"];
 };
-const roleDeck = (count: number): SetupCard[] => shuffle<SetupRole>([...roles(count), "blank"])
-  .slice(0, count + 1)
+const roleDeck = (count: number): SetupCard[] => shuffle<Role>(roles(count))
+  .slice(0, count)
   .map((value, index) => ({ id: `role_${index}_${value}`, value }));
 const characterHealth: Record<string, number> = {
   paul_regret: 3, el_gringo: 3, vulture_sam: 4, calamity_janet: 4,
@@ -310,7 +309,7 @@ export class BangBangMatch extends DurableObject<Env> {
     const card = state.roleDeck?.find((item) => item.id === cardId && !item.pickedBy);
     if (!card) throw Error("La vai tro khong hop le.");
     card.pickedBy = userId;
-    player.role = card.value === "blank" ? undefined : card.value as Role;
+    player.role = card.value as Role;
     if (state.players.every((item) => state.roleDeck?.some((card) => card.pickedBy === item.id))) this.startCharacterSelection(state);
   }
   private pickRandomRole(state: MatchState, player: Player): void {
@@ -318,7 +317,7 @@ export class BangBangMatch extends DurableObject<Env> {
     const card = shuffle(state.roleDeck?.filter((item) => !item.pickedBy) ?? [])[0];
     if (!card) return;
     card.pickedBy = player.id;
-    player.role = card.value === "blank" ? undefined : card.value as Role;
+    player.role = card.value as Role;
   }
   private fillMissingRoles(state: MatchState): void {
     for (const player of state.players.filter((item) => !state.roleDeck?.some((card) => card.pickedBy === item.id))) this.pickRandomRole(state, player);

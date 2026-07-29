@@ -52,7 +52,7 @@ void main() {
     final pendingList = await repository.watchPendingActions(room.id).first;
 
     expect(setup?.phase, 'role_selection');
-    expect(setup?.roleDeck, hasLength(9));
+    expect(setup?.roleDeck, hasLength(8));
     expect(hand, ['bang_ace_spade', 'beer_2_heart']);
     expect(pending?['id'], 'pending_1');
     expect(pending?['targetPlayerId'], 'player_cache_test_12345');
@@ -118,7 +118,7 @@ Map<String, Object?> _roomSnapshot({
   'publicLog': const [],
   'pendingBang': ?pendingBang,
   'roleDeck': List.generate(
-    9,
+    8,
     (index) => {
       'id': 'role_$index',
       'value': index == 0 ? 'sheriff' : '',

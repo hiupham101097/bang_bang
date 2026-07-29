@@ -17,7 +17,7 @@ void main() {
         role: null,
         characterOptions: const [],
         roleDeck: List.generate(
-          9,
+          8,
           (index) => SetupChoice(id: 'r$index', value: ''),
         ),
       ),
@@ -77,6 +77,89 @@ void main() {
     expect(find.text('CHON'), findsNothing);
     _expectNoScrollOrOverflow(tester);
   });
+
+  testWidgets('role card requires confirm before choosing', (tester) async {
+    final repository = _FakeSetupRepository(
+      PrivateSetupState(
+        phase: 'role_selection',
+        playerId: 'p0',
+        role: null,
+        characterOptions: const [],
+        roleDeck: List.generate(
+          8,
+          (index) => SetupChoice(id: 'r$index', value: ''),
+        ),
+      ),
+    );
+
+    await _pumpSetup(tester, repository, const Size(360, 640));
+    await tester.tap(find.byKey(const ValueKey('role_card_r0')));
+    await tester.pump();
+
+    expect(repository.chosenRoleCardId, isNull);
+    expect(find.text('CHON'), findsOneWidget);
+
+    await tester.tap(find.text('CHON'));
+    await tester.pump();
+
+    expect(repository.chosenRoleCardId, 'r0');
+    _expectNoScrollOrOverflow(tester);
+  });
+
+  testWidgets('character card requires confirm before taking', (tester) async {
+    final repository = _FakeSetupRepository(
+      PrivateSetupState(
+        phase: 'character_selection',
+        playerId: 'p0',
+        role: 'sheriff',
+        characterOptions: const [],
+        characterDeck: List.generate(
+          16,
+          (index) => SetupChoice(id: 'c$index', value: ''),
+        ),
+      ),
+    );
+
+    await _pumpSetup(tester, repository, const Size(360, 640));
+    await tester.tap(find.byKey(const ValueKey('character_card_c0')));
+    await tester.pump();
+
+    expect(repository.takenCharacterCardId, isNull);
+    expect(find.text('CHON'), findsOneWidget);
+
+    await tester.tap(find.text('CHON'));
+    await tester.pump();
+
+    expect(repository.takenCharacterCardId, 'c0');
+    _expectNoScrollOrOverflow(tester);
+  });
+
+  testWidgets('final character choice requires inspecting then confirming', (
+    tester,
+  ) async {
+    final repository = _FakeSetupRepository(
+      const PrivateSetupState(
+        phase: 'choosing_character',
+        playerId: 'p0',
+        role: 'sheriff',
+        characterOptions: ['black_jack', 'lucky_duke'],
+      ),
+    );
+
+    await _pumpSetup(tester, repository, const Size(360, 640));
+
+    expect(find.text('CHON'), findsNothing);
+    await tester.tap(find.text('Lucky Duke'));
+    await tester.pump();
+    expect(repository.chosenCharacterId, isNull);
+    expect(find.text('CHON'), findsOneWidget);
+
+    await tester.tap(find.text('CHON'));
+    await tester.pump();
+
+    expect(repository.chosenCharacterId, 'lucky_duke');
+    _expectNoScrollOrOverflow(tester);
+  });
 }
 
 Future<void> _pumpSetupAtSizes(
@@ -133,6 +216,9 @@ class _FakeSetupRepository implements OnlineRoomRepository {
   _FakeSetupRepository(this.state);
 
   final PrivateSetupState state;
+  String? chosenRoleCardId;
+  String? takenCharacterCardId;
+  String? chosenCharacterId;
 
   @override
   Stream<PrivateSetupState?> watchPrivateSetup(String roomId) =>
@@ -143,17 +229,23 @@ class _FakeSetupRepository implements OnlineRoomRepository {
       const PlayerProfile(uid: 'p0', displayName: 'P0');
 
   @override
-  Future<void> chooseRole(String roomId, String cardId) async {}
+  Future<void> chooseRole(String roomId, String cardId) async {
+    chosenRoleCardId = cardId;
+  }
 
   @override
-  Future<void> takeCharacterCard(String roomId, String cardId) async {}
+  Future<void> takeCharacterCard(String roomId, String cardId) async {
+    takenCharacterCardId = cardId;
+  }
 
   @override
   Future<void> chooseCharacter(
     String roomId,
     String characterId,
     String actionId,
-  ) async {}
+  ) async {
+    chosenCharacterId = characterId;
+  }
 
   @override
   Future<void> addBot(String roomId, String difficulty) => _unused();
