@@ -272,12 +272,15 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
             pickedBy: data['pickedBy'] as String?,
           );
         })
-        .where((item) => item.id.isNotEmpty && item.value.isNotEmpty)
+        .where((item) => item.id.isNotEmpty)
         .toList();
   }
 
   @override
   Stream<List<String>> watchHand(String roomId) async* {
+    if (_hands.containsKey(roomId)) {
+      yield _hands[roomId] ?? const <String>[];
+    }
     await for (final room in watchRoom(roomId)) {
       yield _hands[room?.id] ?? const <String>[];
     }
@@ -333,6 +336,9 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
   ) async => _command(roomId, 'choose_character', {'characterId': characterId});
   @override
   Stream<PrivateSetupState?> watchPrivateSetup(String roomId) async* {
+    if (_privateSetup.containsKey(roomId)) {
+      yield _privateSetup[roomId];
+    }
     await for (final _ in watchRoom(roomId)) {
       yield _privateSetup[roomId];
     }
@@ -340,6 +346,10 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
 
   @override
   Stream<Map<String, dynamic>?> watchPendingAction(String roomId) async* {
+    if (_pendingActions.containsKey(roomId)) {
+      final actions = _pendingActions[roomId] ?? const <Map<String, dynamic>>[];
+      yield actions.isEmpty ? null : actions.first;
+    }
     await for (final _ in watchRoom(roomId)) {
       final actions = _pendingActions[roomId] ?? const <Map<String, dynamic>>[];
       yield actions.isEmpty ? null : actions.first;
@@ -348,6 +358,9 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
 
   @override
   Stream<List<Map<String, dynamic>>> watchPendingActions(String roomId) async* {
+    if (_pendingActions.containsKey(roomId)) {
+      yield _pendingActions[roomId] ?? const <Map<String, dynamic>>[];
+    }
     await for (final _ in watchRoom(roomId)) {
       yield _pendingActions[roomId] ?? const <Map<String, dynamic>>[];
     }
@@ -382,9 +395,12 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
       maxPlayers: (data['maxPlayers'] as num?)?.toInt() ?? 4,
       turnDurationSeconds: (data['turnDurationSeconds'] as num?)?.toInt() ?? 45,
     ),
-    status: data['status'] == 'playing'
-        ? RoomStatus.playing
-        : RoomStatus.waiting,
+    status: switch (data['status']) {
+      'playing' => RoomStatus.playing,
+      'finished' => RoomStatus.finished,
+      'starting' => RoomStatus.starting,
+      _ => RoomStatus.waiting,
+    },
     phase: data['phase'] as String? ?? 'lobby',
     members: List<RoomMember>.generate(
       (data['totalCount'] as num?)?.toInt() ?? 0,

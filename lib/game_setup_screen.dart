@@ -51,6 +51,10 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
           final isCharacterStep =
               phase == 'character_selection' || phase == 'choosing_character';
           final selectedCharacter = _selectedCharacterForCenter(state);
+          final selectedRole = _selectedRoleForCenter(state);
+          final hasPickedRole =
+              state?.roleDeck.any((card) => card.pickedBy == state.playerId) ??
+              false;
 
           return LayoutBuilder(
             builder: (context, constraints) {
@@ -64,12 +68,17 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                       deadline: state?.selectionDeadlineAt,
                       members: widget.room.members,
                     ),
-                    SizedBox(height: compact ? 4 : 8),
+                    SizedBox(height: compact ? 2 : 8),
                     Expanded(
                       child: _SetupCenterStage(
                         phase: phase,
-                        role: state?.role,
+                        role: selectedRole,
                         selectedCharacterId: selectedCharacter,
+                        submitted: state?.submitted ?? false,
+                        finalCharacterIds:
+                            state != null && state.characterOptions.length >= 2
+                            ? state.characterOptions
+                            : const [],
                         canConfirmCharacter:
                             selectedCharacter != null &&
                             state != null &&
@@ -82,11 +91,13 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                                 selectedCharacter,
                                 '${DateTime.now().microsecondsSinceEpoch}_$selectedCharacter',
                               ),
+                        onInspectCharacter: (id) =>
+                            setState(() => _inspectedCharacterId = id),
                       ),
                     ),
-                    SizedBox(height: compact ? 4 : 8),
+                    SizedBox(height: compact ? 2 : 8),
                     SizedBox(
-                      height: compact ? 150 : 184,
+                      height: compact ? 132 : 184,
                       child: state == null
                           ? const Center(child: CircularProgressIndicator())
                           : isRoleStep
@@ -94,26 +105,29 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                               cards: state.roleDeck,
                               playerCount: widget.room.members.length,
                               playerId: state.playerId,
-                              canPick: state.role == null,
+                              canPick: !hasPickedRole,
                               onPick: (cardId) => widget.repository.chooseRole(
                                 widget.room.id,
                                 cardId,
                               ),
                             )
-                          : isCharacterStep &&
-                                state.characterOptions.length < 2
+                          : isCharacterStep && state.characterOptions.length < 2
                           ? _CharacterDeck(
                               cards: state.characterDeck,
-                              selectedValues: state.characterOptions.toSet(),
+                              playerId: state.playerId,
                               onPick: (cardId) => widget.repository
                                   .takeCharacterCard(widget.room.id, cardId),
                             )
                           : isCharacterStep && !state.submitted
-                          ? _FinalCharacterChoices(
-                              ids: state.characterOptions,
-                              inspectedId: selectedCharacter,
-                              onInspect: (id) =>
-                                  setState(() => _inspectedCharacterId = id),
+                          ? const Center(
+                              child: Text(
+                                'Nhan vao 1 trong 2 la o giua de xem thong tin.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
                             )
                           : const Center(
                               child: Text(
@@ -137,12 +151,24 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
 
   String? _selectedCharacterForCenter(PrivateSetupState? state) {
     if (state == null || state.characterOptions.isEmpty) return null;
+    if (state.selectedCharacterId != null &&
+        state.characterOptions.contains(state.selectedCharacterId)) {
+      return state.selectedCharacterId;
+    }
     if (state.characterOptions.length < 2) return null;
     if (_inspectedCharacterId != null &&
         state.characterOptions.contains(_inspectedCharacterId)) {
       return _inspectedCharacterId;
     }
     return null;
+  }
+
+  String? _selectedRoleForCenter(PrivateSetupState? state) {
+    if (state == null) return null;
+    final picked = state.roleDeck
+        .where((card) => card.pickedBy == state.playerId)
+        .firstOrNull;
+    return picked?.value.isNotEmpty == true ? picked!.value : state.role;
   }
 }
 
@@ -162,7 +188,7 @@ class _SetupHeader extends StatelessWidget {
     final seconds = deadline?.difference(DateTime.now()).inSeconds.clamp(0, 60);
     final urgent = seconds != null && seconds <= 10;
     return SizedBox(
-      height: 58,
+      height: 64,
       child: Column(
         children: [
           Row(
@@ -180,7 +206,10 @@ class _SetupHeader extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: urgent
                       ? const Color(0xff5a1913)
@@ -242,15 +271,21 @@ class _SetupCenterStage extends StatelessWidget {
     required this.phase,
     required this.role,
     required this.selectedCharacterId,
+    required this.submitted,
+    required this.finalCharacterIds,
     required this.canConfirmCharacter,
     required this.onConfirmCharacter,
+    required this.onInspectCharacter,
   });
 
   final String phase;
   final String? role;
   final String? selectedCharacterId;
+  final bool submitted;
+  final List<String> finalCharacterIds;
   final bool canConfirmCharacter;
   final VoidCallback? onConfirmCharacter;
+  final ValueChanged<String> onInspectCharacter;
 
   @override
   Widget build(BuildContext context) {
@@ -260,8 +295,11 @@ class _SetupCenterStage extends StatelessWidget {
     if (phase == 'character_selection' || phase == 'choosing_character') {
       return _CenterCharacterReveal(
         id: selectedCharacterId,
+        submitted: submitted,
+        finalIds: finalCharacterIds,
         canConfirm: canConfirmCharacter,
         onConfirm: onConfirmCharacter,
+        onInspect: onInspectCharacter,
       );
     }
     return const Center(
@@ -283,8 +321,8 @@ class _CenterRoleReveal extends StatelessWidget {
         ? const _CardBack(width: 118, height: 164, label: 'CHON 1 LA')
         : _FramedImageCard(
             asset: _roleCardAsset(role!),
-            width: 126,
-            height: 176,
+            width: 116,
+            height: 162,
             footer: _roleLabel(role!),
           ),
   );
@@ -293,25 +331,33 @@ class _CenterRoleReveal extends StatelessWidget {
 class _CenterCharacterReveal extends StatelessWidget {
   const _CenterCharacterReveal({
     required this.id,
+    required this.submitted,
+    required this.finalIds,
     required this.canConfirm,
     required this.onConfirm,
+    required this.onInspect,
   });
 
   final String? id;
+  final bool submitted;
+  final List<String> finalIds;
   final bool canConfirm;
   final VoidCallback? onConfirm;
+  final ValueChanged<String> onInspect;
 
   @override
   Widget build(BuildContext context) => Center(
     child: id == null
-        ? const _CardBack(width: 118, height: 164, label: 'NHAN XEM')
+        ? finalIds.length >= 2
+              ? _CenterFinalCards(ids: finalIds, onInspect: onInspect)
+              : const _CardBack(width: 118, height: 164, label: 'CHON 2 LA')
         : Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               _FramedImageCard(
                 asset: _characterAsset(id!),
-                width: 126,
-                height: 176,
+                width: 116,
+                height: 162,
                 footer: _characterName(id!),
               ),
               const SizedBox(width: 12),
@@ -342,15 +388,65 @@ class _CenterCharacterReveal extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    FilledButton(
-                      onPressed: canConfirm ? onConfirm : null,
-                      child: const Text('CHON'),
-                    ),
+                    submitted
+                        ? const Text(
+                            'Dang cho nguoi choi khac...',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          )
+                        : FilledButton(
+                            onPressed: canConfirm ? onConfirm : null,
+                            child: const Text('CHON'),
+                          ),
                   ],
                 ),
               ),
             ],
           ),
+  );
+}
+
+class _CenterFinalCards extends StatelessWidget {
+  const _CenterFinalCards({required this.ids, required this.onInspect});
+
+  final List<String> ids;
+  final ValueChanged<String> onInspect;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      const Text(
+        'CHON 1 TRONG 2 LA',
+        style: TextStyle(
+          color: Color(0xffffd272),
+          fontWeight: FontWeight.w900,
+          fontSize: 14,
+        ),
+      ),
+      const SizedBox(height: 8),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: ids.take(2).map((id) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 7),
+            child: InkWell(
+              onTap: () => onInspect(id),
+              borderRadius: BorderRadius.circular(10),
+              child: _FramedImageCard(
+                asset: _characterAsset(id),
+                width: 104,
+                height: 146,
+                footer: _characterName(id),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    ],
   );
 }
 
@@ -376,10 +472,8 @@ class _RoleDeck extends StatelessWidget {
               .asMap()
               .entries
               .map(
-                (entry) => SetupChoice(
-                  id: 'preview_${entry.key}',
-                  value: entry.value,
-                ),
+                (entry) =>
+                    SetupChoice(id: 'preview_${entry.key}', value: entry.value),
               )
               .toList()
         : cards;
@@ -420,20 +514,22 @@ class _RoleDeck extends StatelessWidget {
 class _CharacterDeck extends StatelessWidget {
   const _CharacterDeck({
     required this.cards,
-    required this.selectedValues,
+    required this.playerId,
     required this.onPick,
   });
 
   final List<SetupChoice> cards;
-  final Set<String> selectedValues;
+  final String? playerId;
   final ValueChanged<String> onPick;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       final columns = cards.length > 12 ? 8 : math.min(cards.length, 6);
-      final cardWidth = (constraints.maxWidth / math.max(1, columns) - 6)
-          .clamp(32.0, 52.0);
+      final cardWidth = (constraints.maxWidth / math.max(1, columns) - 6).clamp(
+        32.0,
+        52.0,
+      );
       final cardHeight = cardWidth * 1.4;
       return Center(
         child: Wrap(
@@ -441,7 +537,7 @@ class _CharacterDeck extends StatelessWidget {
           spacing: 5,
           runSpacing: 5,
           children: cards.map((card) {
-            final selected = selectedValues.contains(card.value);
+            final selected = playerId != null && card.pickedBy == playerId;
             final enabled = !card.isPicked;
             return Opacity(
               opacity: enabled || selected ? 1 : .32,
@@ -460,49 +556,6 @@ class _CharacterDeck extends StatelessWidget {
         ),
       );
     },
-  );
-}
-
-class _FinalCharacterChoices extends StatelessWidget {
-  const _FinalCharacterChoices({
-    required this.ids,
-    required this.inspectedId,
-    required this.onInspect,
-  });
-
-  final List<String> ids;
-  final String? inspectedId;
-  final ValueChanged<String> onInspect;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    mainAxisAlignment: MainAxisAlignment.center,
-    children: ids.map((id) {
-      final selected = id == inspectedId;
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 5),
-        child: InkWell(
-          onTap: () => onInspect(id),
-          borderRadius: BorderRadius.circular(8),
-        child: Container(
-          width: 76,
-          height: 106,
-          padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: const Color(0xfff4dfac),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: selected
-                    ? const Color(0xffffc451)
-                    : const Color(0xff7a430e),
-                width: selected ? 3 : 1,
-              ),
-            ),
-            child: Image.asset(_characterAsset(id), fit: BoxFit.contain),
-          ),
-        ),
-      );
-    }).toList(),
   );
 }
 
@@ -634,6 +687,7 @@ String _roleCardAsset(String role) => switch (role) {
   'sheriff' => 'assets/images/role_cards/sheriff_card.png',
   'deputy' => 'assets/images/role_cards/deputy_card.png',
   'guardian' => 'assets/images/role_cards/guardian_card.png',
+  'blank' => 'assets/images/bang_bang_logo.png',
   'outlaw' || 'raider' => 'assets/images/role_cards/raider_card.png',
   'renegade' || 'traitor' => 'assets/images/role_cards/traitor_card.png',
   _ => 'assets/images/role_cards/deputy_card.png',
@@ -651,6 +705,7 @@ String _roleLabel(String role) => switch (role) {
   'sheriff' => 'Sheriff',
   'deputy' => 'Deputy',
   'guardian' => 'Guardian',
+  'blank' => 'Dang gan vai tro',
   'outlaw' || 'raider' => 'Raider',
   'renegade' || 'traitor' => 'Traitor',
   _ => 'Role',

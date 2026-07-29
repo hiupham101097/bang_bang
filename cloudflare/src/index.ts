@@ -7,6 +7,7 @@ export interface Env {
 }
 
 type Role = "sheriff" | "deputy" | "outlaw" | "renegade";
+type SetupRole = Role | "blank";
 type Phase = "lobby" | "role_selection" | "character_selection" | "choosing_character" | "turn_start" | "play_phase" | "waiting_response" | "discard_phase" | "game_over";
 type Command =
   | "join"
@@ -87,7 +88,7 @@ const roles = (count: number): Role[] => {
   const police = Math.floor((count - 1) / 2);
   return ["sheriff", ...Array(police - 1).fill("deputy"), ...Array(count - police - 1).fill("outlaw"), "renegade"];
 };
-const roleDeck = (count: number): SetupCard[] => shuffle([...roles(count), "deputy" as Role])
+const roleDeck = (count: number): SetupCard[] => shuffle<SetupRole>([...roles(count), "blank"])
   .slice(0, count + 1)
   .map((value, index) => ({ id: `role_${index}_${value}`, value }));
 const characterHealth: Record<string, number> = {
@@ -300,29 +301,47 @@ export class BangBangMatch extends DurableObject<Env> {
     state.publicLog.push("Moi nguoi dang chon vai tro.");
     for (const bot of state.players.filter((player) => player.bot)) this.pickRandomRole(state, bot);
     void this.ctx.storage.setAlarm(state.characterSelectionDeadline);
-    if (state.players.every((player) => player.role)) this.startCharacterSelection(state);
+    if (state.players.every((player) => state.roleDeck?.some((card) => card.pickedBy === player.id))) this.startCharacterSelection(state);
   }
   private chooseRole(state: MatchState, userId: string, cardId: string): void {
     if (state.status !== "starting" || state.phase !== "role_selection") throw Error("Khong o giai doan chon vai tro.");
     const player = this.player(state, userId);
-    if (player.role) throw Error("Ban da chon vai tro.");
+    if (state.roleDeck?.some((card) => card.pickedBy === userId)) throw Error("Ban da chon vai tro.");
     const card = state.roleDeck?.find((item) => item.id === cardId && !item.pickedBy);
     if (!card) throw Error("La vai tro khong hop le.");
     card.pickedBy = userId;
-    player.role = card.value as Role;
-    if (state.players.every((item) => item.role)) this.startCharacterSelection(state);
+    player.role = card.value === "blank" ? undefined : card.value as Role;
+    if (state.players.every((item) => state.roleDeck?.some((card) => card.pickedBy === item.id))) this.startCharacterSelection(state);
   }
   private pickRandomRole(state: MatchState, player: Player): void {
-    if (player.role) return;
+    if (state.roleDeck?.some((card) => card.pickedBy === player.id)) return;
     const card = shuffle(state.roleDeck?.filter((item) => !item.pickedBy) ?? [])[0];
     if (!card) return;
     card.pickedBy = player.id;
-    player.role = card.value as Role;
+    player.role = card.value === "blank" ? undefined : card.value as Role;
   }
   private fillMissingRoles(state: MatchState): void {
-    for (const player of state.players.filter((item) => !item.role)) this.pickRandomRole(state, player);
+    for (const player of state.players.filter((item) => !state.roleDeck?.some((card) => card.pickedBy === item.id))) this.pickRandomRole(state, player);
+  }
+  private normalizeRoles(state: MatchState): void {
+    const required = roles(state.players.length);
+    const counts = new Map<Role, number>();
+    for (const role of required) counts.set(role, (counts.get(role) ?? 0) + 1);
+    for (const player of state.players) {
+      const role = player.role;
+      const remaining = role ? counts.get(role) ?? 0 : 0;
+      if (role && remaining > 0) counts.set(role, remaining - 1);
+      else player.role = undefined;
+    }
+    const missing = [...counts.entries()].flatMap(([role, count]) =>
+      Array<Role>(count).fill(role)
+    );
+    shuffle(state.players.filter((player) => !player.role)).forEach((player, index) => {
+      player.role = missing[index];
+    });
   }
   private startCharacterSelection(state: MatchState): void {
+    this.normalizeRoles(state);
     const offered = shuffle(characters).slice(0, state.players.length * 2);
     state.characterDeck = offered.map((value, index) => ({ id: `character_${index}_${value}`, value }));
     state.players.forEach((player) => {
@@ -351,6 +370,7 @@ export class BangBangMatch extends DurableObject<Env> {
     if (!card) throw Error("La nhan vat khong hop le.");
     card.pickedBy = userId;
     player.characterOptions.push(card.value);
+    this.advanceCharacterChoicePhase(state);
   }
   private takeRandomCharacterCard(state: MatchState, player: Player): void {
     player.characterOptions ??= [];
@@ -359,6 +379,13 @@ export class BangBangMatch extends DurableObject<Env> {
     if (!card) return;
     card.pickedBy = player.id;
     player.characterOptions.push(card.value);
+    this.advanceCharacterChoicePhase(state);
+  }
+  private advanceCharacterChoicePhase(state: MatchState): void {
+    if (state.phase === "character_selection" && state.players.every((player) => (player.characterOptions?.length ?? 0) >= 2)) {
+      state.phase = "choosing_character";
+      state.publicLog.push("Moi nguoi chon 1 trong 2 la nhan vat.");
+    }
   }
   private fillMissingCharacters(state: MatchState): void {
     for (const player of state.players) {
@@ -372,6 +399,7 @@ export class BangBangMatch extends DurableObject<Env> {
   private chooseCharacter(state: MatchState, userId: string, characterId: string): void {
     if (state.status !== "starting" || (state.phase !== "character_selection" && state.phase !== "choosing_character")) throw Error("Khong o giai doan chon nhan vat.");
     const player = this.player(state, userId);
+    if ((player.characterOptions?.length ?? 0) < 2) throw Error("Can chon du 2 la nhan vat truoc.");
     if (player.characterChosen || !player.characterOptions?.includes(characterId)) throw Error("Nhân vật không hợp lệ.");
     player.characterId = characterId; player.characterChosen = true;
     this.finalizeCharacters(state);
@@ -387,11 +415,12 @@ export class BangBangMatch extends DurableObject<Env> {
     }
     state.deck = cards.slice(cursor);
     const openerDraws = state.players.map((player) => ({ player, card: state.deck.shift()! }));
-    openerDraws.forEach((draw) => state.discard.push(draw.card));
     openerDraws.sort((left, right) => rankValue(right.card) - rankValue(left.card));
-    state.discard = []; state.status = "playing"; state.phase = "turn_start";
+    state.discard = openerDraws.map((draw) => draw.card);
+    state.status = "playing"; state.phase = "turn_start";
     state.currentTurnPlayerId = openerDraws[0]?.player.id ?? state.players.find((player) => player.role === "sheriff")!.id;
     state.turnNumber = 1; state.bangUsedThisTurn = 0; state.publicLog.push("Trận đấu bắt đầu.");
+    state.publicLog.push(`${openerDraws[0]?.player.name ?? "Nguoi choi"} boc la cao nhat (${openerDraws[0]?.card ?? ""}).`);
     state.turnDeadline = Date.now() + state.turnDurationSeconds * 1000;
     void this.ctx.storage.setAlarm(state.turnDeadline);
     this.runBotTurn(state);
@@ -800,7 +829,14 @@ export class BangBangMatch extends DurableObject<Env> {
   }
   private websocket(request: Request, user: User): Response { if (request.headers.get("Upgrade") !== "websocket") return fail("Expected WebSocket", 426); const pair = new WebSocketPair(); const [client, server] = Object.values(pair); server.serializeAttachment(user); this.ctx.acceptWebSocket(server); void this.load().then((state) => server.send(JSON.stringify({ type: "state", room: this.snapshot(state, user.id) }))); return new Response(null, { status: 101, webSocket: client }); }
   private broadcast(state: MatchState): void { for (const ws of this.ctx.getWebSockets()) { const user = ws.deserializeAttachment() as User | null; if (user) ws.send(JSON.stringify({ type: "state", room: this.snapshot(state, user.id) })); } }
-  private snapshot(state: MatchState, userId: string) { const me = state.players.find((player) => player.id === userId); return { ...state, deck: undefined, players: state.players.map(({ hand, role, characterOptions, characterChosen, ...player }) => ({ ...player, revealedRole: role === "sheriff" ? role : undefined, role: player.id === userId ? role : undefined, hand: player.id === userId ? hand : undefined, characterOptions: player.id === userId ? characterOptions : undefined, characterChosen: player.id === userId ? characterChosen : undefined })), hand: me?.hand ?? [] }; }
+  private setupDeckFor(cards: SetupCard[] | undefined, userId: string): SetupCard[] | undefined {
+    return cards?.map((card) => ({
+      id: card.id,
+      value: card.pickedBy === userId ? card.value : "",
+      pickedBy: card.pickedBy,
+    }));
+  }
+  private snapshot(state: MatchState, userId: string) { const me = state.players.find((player) => player.id === userId); return { ...state, deck: undefined, roleDeck: this.setupDeckFor(state.roleDeck, userId), characterDeck: this.setupDeckFor(state.characterDeck, userId), players: state.players.map(({ hand, role, characterOptions, characterChosen, ...player }) => ({ ...player, revealedRole: role === "sheriff" ? role : undefined, role: player.id === userId ? role : undefined, hand: player.id === userId ? hand : undefined, characterOptions: player.id === userId ? characterOptions : undefined, characterChosen: player.id === userId ? characterChosen : undefined })), hand: me?.hand ?? [] }; }
 }
 
 async function sign(user: User, secret: string): Promise<string> { const payload = textToBase64(JSON.stringify({ ...user, exp: Date.now() + 1000 * 60 * 60 * 24 * 30 })); return `${payload}.${await signatureFor(payload, secret)}`; }
