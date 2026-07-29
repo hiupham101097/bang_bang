@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.startGame = exports.leaveRoom = exports.removeBot = exports.addBot = exports.setReady = exports.quickJoinRoom = exports.joinRoom = exports.createRoom = exports.useSidKetchum = exports.useCalamityJanetDodge = exports.triggerSuzyLafayette = exports.startDuel = exports.respondDuel = exports.startMultiAttack = exports.respondMultiAttack = exports.resolveTurnJudgments = exports.resolveTargetCard = exports.resolveSlabDodge = exports.resolveJourdonnais = exports.resolveExpiredResponse = exports.playSpecialCard = exports.openLuckyDukeJudgment = exports.openKitCarlson = exports.openGeneralStore = exports.drawJesseJones = exports.drawCharacterTurnCards = exports.chooseLuckyDukeJudgment = exports.chooseKitCarlson = exports.chooseGeneralStoreCard = exports.acceptBangDamage = exports.setBangResponseDeadline = exports.applySuzyLafayette = exports.applyBartCassidyDamage = exports.resolveElimination = exports.resolveTurnTimeout = exports.resolveDying = exports.discardCards = exports.requestEndTurn = exports.respondToAction = exports.playCard = exports.drawTurnCards = exports.runBotResponse = exports.runBotTurn = exports.resumeGameSetup = exports.chooseCharacter = exports.beginGameSetup = void 0;
+exports.startGame = exports.leaveRoom = exports.removeBot = exports.addBot = exports.setReady = exports.quickJoinRoom = exports.joinRoom = exports.createRoom = exports.useSidKetchum = exports.useCalamityJanetDodge = exports.triggerSuzyLafayette = exports.startDuel = exports.respondDuel = exports.startMultiAttack = exports.respondMultiAttack = exports.resolveTurnJudgments = exports.resolveTargetCard = exports.resolveSlabDodge = exports.resolveJourdonnais = exports.resolveExpiredResponse = exports.playSpecialCard = exports.openLuckyDukeJudgment = exports.openKitCarlson = exports.openGeneralStore = exports.drawJesseJones = exports.drawCharacterTurnCards = exports.chooseLuckyDukeJudgment = exports.chooseKitCarlson = exports.chooseGeneralStoreCard = exports.acceptBangDamage = exports.expireTurn = exports.expireSequentialResponse = exports.expireBangResponse = exports.setBangResponseDeadline = exports.applySuzyLafayette = exports.applyBartCassidyDamage = exports.resolveElimination = exports.resolveTurnTimeout = exports.saveDyingPlayer = exports.resolveDying = exports.discardCards = exports.requestEndTurn = exports.respondToAction = exports.playCard = exports.drawTurnCards = exports.runBotResponse = exports.runBotTurn = exports.resumeGameSetup = exports.chooseCharacter = exports.beginGameSetup = void 0;
 const admin = __importStar(require("firebase-admin"));
 const https_1 = require("firebase-functions/https");
 var game_setup_1 = require("./game_setup");
@@ -51,6 +51,7 @@ Object.defineProperty(exports, "respondToAction", { enumerable: true, get: funct
 Object.defineProperty(exports, "requestEndTurn", { enumerable: true, get: function () { return game_play_1.requestEndTurn; } });
 Object.defineProperty(exports, "discardCards", { enumerable: true, get: function () { return game_play_1.discardCards; } });
 Object.defineProperty(exports, "resolveDying", { enumerable: true, get: function () { return game_play_1.resolveDying; } });
+Object.defineProperty(exports, "saveDyingPlayer", { enumerable: true, get: function () { return game_play_1.saveDyingPlayer; } });
 Object.defineProperty(exports, "resolveTurnTimeout", { enumerable: true, get: function () { return game_play_1.resolveTurnTimeout; } });
 var game_resolution_1 = require("./game_resolution");
 Object.defineProperty(exports, "resolveElimination", { enumerable: true, get: function () { return game_resolution_1.resolveElimination; } });
@@ -58,6 +59,10 @@ var character_triggers_1 = require("./character_triggers");
 Object.defineProperty(exports, "applyBartCassidyDamage", { enumerable: true, get: function () { return character_triggers_1.applyBartCassidyDamage; } });
 Object.defineProperty(exports, "applySuzyLafayette", { enumerable: true, get: function () { return character_triggers_1.applySuzyLafayette; } });
 Object.defineProperty(exports, "setBangResponseDeadline", { enumerable: true, get: function () { return character_triggers_1.setBangResponseDeadline; } });
+var auto_timeouts_1 = require("./auto_timeouts");
+Object.defineProperty(exports, "expireBangResponse", { enumerable: true, get: function () { return auto_timeouts_1.expireBangResponse; } });
+Object.defineProperty(exports, "expireSequentialResponse", { enumerable: true, get: function () { return auto_timeouts_1.expireSequentialResponse; } });
+Object.defineProperty(exports, "expireTurn", { enumerable: true, get: function () { return auto_timeouts_1.expireTurn; } });
 var game_phase4_1 = require("./game_phase4");
 Object.defineProperty(exports, "acceptBangDamage", { enumerable: true, get: function () { return game_phase4_1.acceptBangDamage; } });
 Object.defineProperty(exports, "chooseGeneralStoreCard", { enumerable: true, get: function () { return game_phase4_1.chooseGeneralStoreCard; } });
@@ -304,16 +309,18 @@ exports.startGame = (0, https_1.onCall)(async (request) => {
     await db.runTransaction(async (tx) => {
         const room = await tx.get(ref);
         const players = await tx.get(ref.collection("players"));
+        const caller = players.docs.find((player) => player.id === owner);
         const humans = players.docs.filter((d) => d.get("playerType") === "human");
         const guests = humans.filter((d) => d.id !== owner);
         if (!room.exists ||
-            room.get("hostUid") !== owner ||
+            (room.get("hostUid") !== owner && caller?.get("isHost") !== true) ||
             room.get("status") !== "waiting" ||
             players.size < 4 ||
             humans.length < 1 ||
             guests.some((d) => !d.get("isReady") || d.get("connectionState") !== "online"))
             throw new https_1.HttpsError("failed-precondition", "Cần đủ 4 người chơi và mọi khách phải sẵn sàng.");
         tx.update(ref, {
+            hostUid: owner,
             status: "starting",
             phase: "assigning_roles",
             startedAt: now(),

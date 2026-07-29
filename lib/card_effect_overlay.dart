@@ -60,6 +60,91 @@ class AreaAttackEffectOverlay extends StatefulWidget {
       _AreaAttackEffectOverlayState();
 }
 
+class DeathEffectOverlay extends StatefulWidget {
+  const DeathEffectOverlay({super.key});
+
+  @override
+  State<DeathEffectOverlay> createState() => _DeathEffectOverlayState();
+}
+
+class _DeathEffectOverlayState extends State<DeathEffectOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 950),
+  )..forward();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _controller,
+    builder: (context, _) {
+      final progress = _controller.value;
+      return Opacity(
+        opacity: (1 - progress).clamp(0.0, 1.0),
+        child: Transform.scale(
+          scale: 0.65 + progress * 1.4,
+          child: const DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Color(0xaa8f1616),
+              boxShadow: [BoxShadow(color: Color(0xffff3a2c), blurRadius: 12)],
+            ),
+            child: Center(
+              child: Icon(Icons.close_rounded, color: Colors.white, size: 34),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+class HealEffectOverlay extends StatefulWidget {
+  const HealEffectOverlay({super.key, this.size = 130});
+
+  final double size;
+
+  @override
+  State<HealEffectOverlay> createState() => _HealEffectOverlayState();
+}
+
+class _HealEffectOverlayState extends State<HealEffectOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 760),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _controller,
+    builder: (context, _) => Transform.scale(
+      scale: .84 + _controller.value * .22,
+      child: Opacity(
+        opacity: .55 + _controller.value * .45,
+        child: Icon(
+          Icons.favorite,
+          color: const Color(0xff77e78b),
+          size: widget.size,
+          shadows: const [Shadow(color: Color(0xff1c7336), blurRadius: 16)],
+        ),
+      ),
+    ),
+  );
+}
+
 class _AreaAttackEffectOverlayState extends State<AreaAttackEffectOverlay>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(

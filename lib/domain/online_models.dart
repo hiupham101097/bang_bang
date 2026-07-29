@@ -9,6 +9,22 @@ class PlayerProfile {
   final String displayName;
 }
 
+class RoomChatMessage {
+  const RoomChatMessage({
+    required this.id,
+    required this.authorId,
+    required this.authorName,
+    required this.text,
+    required this.sentAt,
+  });
+
+  final String id;
+  final String authorId;
+  final String authorName;
+  final String text;
+  final DateTime? sentAt;
+}
+
 class RoomMember {
   const RoomMember({
     required this.id,
@@ -24,7 +40,9 @@ class RoomMember {
     this.cardCount = 0,
     this.isAlive = true,
     this.characterId,
+    this.revealedRole,
     this.equipment = const [],
+    this.attackRange = 1,
   });
 
   final String id;
@@ -40,7 +58,9 @@ class RoomMember {
   final int cardCount;
   final bool isAlive;
   final String? characterId;
+  final String? revealedRole;
   final List<String> equipment;
+  final int attackRange;
 
   bool get isBot => type == MemberType.bot;
 
@@ -58,7 +78,9 @@ class RoomMember {
     cardCount: cardCount,
     isAlive: isAlive,
     characterId: characterId,
+    revealedRole: revealedRole,
     equipment: equipment,
+    attackRange: attackRange,
   );
 }
 
@@ -101,8 +123,10 @@ class OnlineRoom {
     this.judgmentsResolvedForTurn = 0,
     this.hasDrawnThisTurn = false,
     this.cardsPlayedThisTurn = 0,
+    this.bangUsedThisTurn = 0,
     this.publicLog = const [],
     this.discardTopCardId,
+    this.dyingPlayerId,
   });
 
   final String id;
@@ -120,8 +144,10 @@ class OnlineRoom {
   final int judgmentsResolvedForTurn;
   final bool hasDrawnThisTurn;
   final int cardsPlayedThisTurn;
+  final int bangUsedThisTurn;
   final List<String> publicLog;
   final String? discardTopCardId;
+  final String? dyingPlayerId;
 
   int get humanCount => members.where((member) => !member.isBot).length;
   int get botCount => members.where((member) => member.isBot).length;
@@ -154,8 +180,10 @@ class OnlineRoom {
     int? judgmentsResolvedForTurn,
     bool? hasDrawnThisTurn,
     int? cardsPlayedThisTurn,
+    int? bangUsedThisTurn,
     List<String>? publicLog,
     String? discardTopCardId,
+    String? dyingPlayerId,
   }) => OnlineRoom(
     id: id,
     code: code,
@@ -173,8 +201,10 @@ class OnlineRoom {
         judgmentsResolvedForTurn ?? this.judgmentsResolvedForTurn,
     hasDrawnThisTurn: hasDrawnThisTurn ?? this.hasDrawnThisTurn,
     cardsPlayedThisTurn: cardsPlayedThisTurn ?? this.cardsPlayedThisTurn,
+    bangUsedThisTurn: bangUsedThisTurn ?? this.bangUsedThisTurn,
     publicLog: publicLog ?? this.publicLog,
     discardTopCardId: discardTopCardId ?? this.discardTopCardId,
+    dyingPlayerId: dyingPlayerId ?? this.dyingPlayerId,
   );
 }
 

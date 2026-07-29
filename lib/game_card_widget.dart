@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'card_catalog.dart';
 import 'game_engine.dart';
 
 String getRankLabel(CardRank rank) => switch (rank) {
@@ -197,57 +198,25 @@ class _CornerRankSuit extends StatelessWidget {
   }
 }
 
-/// Debug gallery: all existing assets are used while the 52 standard
-/// rank/suit combinations are displayed exactly once.
+/// Card collection shown from Home. It displays each card type once; rank and
+/// suit remain code-rendered by [GameCardWidget], not baked into the assets.
 class CardPreviewScreen extends StatelessWidget {
   const CardPreviewScreen({super.key});
-
-  static const _assets = [
-    'appaloosa.png',
-    'bang.png',
-    'barrel.png',
-    'beer.png',
-    'cat_balou.png',
-    'dilizenza.png',
-    'duello.png',
-    'dynamite.png',
-    'gatling.png',
-    'general_store.png',
-    'gun_range_2.png',
-    'gun_range_3.png',
-    'gun_range_4.png',
-    'gun_range_5.png',
-    'indiani.png',
-    'jail.png',
-    'mustang.png',
-    'ne.png',
-    'panico.png',
-    'saloon.png',
-    'volcanic.png',
-    'wells_fargo.png',
-  ];
-
-  static final _deck = [
-    for (final suit in CardSuit.values)
-      for (final rank in CardRank.values) (rank: rank, suit: suit),
-  ];
-
   GameCard _previewCard(int index) {
-    final marker = _deck[index % _deck.length];
-    final asset = _assets[index % _assets.length];
+    final info = cardCatalog[index];
     return GameCard(
       CardType.bang,
-      id: 'preview_${asset.replaceAll('.png', '')}_${marker.rank.name}_${marker.suit.name}',
-      rank: marker.rank,
-      suit: marker.suit,
-      imageAsset: 'assets/images/cards/$asset',
+      id: 'catalog_${info.id}',
+      rank: CardRank.values[index % CardRank.values.length],
+      suit: CardSuit.values[index % CardSuit.values.length],
+      imageAsset: info.imagePath!,
     );
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: const Color(0xff17100b),
-    appBar: AppBar(title: const Text('Kiểm tra toàn bộ thẻ bài')),
+    appBar: AppBar(title: const Text('THẺ BÀI')),
     body: LayoutBuilder(
       builder: (context, constraints) {
         final columns = constraints.maxWidth >= 1000
@@ -268,12 +237,85 @@ class CardPreviewScreen extends StatelessWidget {
             crossAxisSpacing: 14,
             childAspectRatio: .62,
           ),
-          itemCount: _deck.length,
+          itemCount: cardCatalog.length,
           itemBuilder: (context, index) => Center(
-            child: GameCardWidget(card: _previewCard(index), width: cardWidth),
+            child: Semantics(
+              button: true,
+              label: 'Xem thông tin ${cardCatalog[index].name}',
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => _CardDetailScreen(
+                      info: cardCatalog[index],
+                      card: _previewCard(index),
+                    ),
+                  ),
+                ),
+                child: GameCardWidget(
+                  card: _previewCard(index),
+                  width: cardWidth,
+                ),
+              ),
+            ),
           ),
         );
       },
+    ),
+  );
+}
+
+class _CardDetailScreen extends StatelessWidget {
+  const _CardDetailScreen({required this.info, required this.card});
+
+  final CardInfo info;
+  final GameCard card;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: const Color(0xff17100b),
+    appBar: AppBar(title: Text(info.name)),
+    body: SafeArea(
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GameCardWidget(card: card, width: 270),
+                const SizedBox(height: 22),
+                Text(
+                  info.name,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xffffc451),
+                    fontSize: 25,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'CHỨC NĂNG',
+                    style: TextStyle(
+                      color: Color(0xffffc451),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  info.description,
+                  style: const TextStyle(fontSize: 16, height: 1.45),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     ),
   );
 }

@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resolveDying = exports.resolveTurnTimeout = exports.discardCards = exports.requestEndTurn = exports.respondToAction = exports.playCard = exports.drawTurnCards = void 0;
+exports.saveDyingPlayer = exports.resolveDying = exports.resolveTurnTimeout = exports.discardCards = exports.requestEndTurn = exports.respondToAction = exports.playCard = exports.drawTurnCards = void 0;
 const admin = __importStar(require("firebase-admin"));
 const https_1 = require("firebase-functions/https");
 if (!admin.apps.length)
@@ -140,7 +140,6 @@ exports.playCard = (0, https_1.onCall)(async (request) => {
         if (!state.exists ||
             state.get("phase") !== "play_phase" ||
             state.get("currentTurnPlayerId") !== uid ||
-            Number(state.get("cardsPlayedThisTurn") ?? 0) >= 1 ||
             !actor.exists ||
             action.exists)
             throw new https_1.HttpsError("failed-precondition", "Không thể dùng bài.");
@@ -245,6 +244,7 @@ exports.respondToAction = (0, https_1.onCall)(async (request) => {
     const cardId = request.data.cardId;
     const room = db.doc(`rooms/${id}`);
     await db.runTransaction(async (tx) => {
+        const state = await tx.get(room);
         const pending = await tx.get(room.collection("pendingActions").doc(pendingId));
         const target = await tx.get(room.collection("players").doc(uid));
         const privateState = await tx.get(room.collection("privateStates").doc(uid));
@@ -269,14 +269,33 @@ exports.respondToAction = (0, https_1.onCall)(async (request) => {
         else
             health--;
         tx.delete(pending.ref);
+        const outcomeLog = response === "missed"
+            ? `dodge:${uid}:${cardId}:${pending.get("actorPlayerId") ?? ""}`
+            : `damage:${uid}:bang:${pending.get("actorPlayerId") ?? ""}`;
         if (health <= 0) {
-            tx.update(target.ref, { health });
-            tx.update(room, { phase: "dying", dyingPlayerId: uid, updatedAt: now() });
+            tx.update(target.ref, {
+                health,
+                lastDamageBy: String(pending.get("actorPlayerId") ?? ""),
+            });
+            tx.update(room, {
+                phase: "dying",
+                dyingPlayerId: uid,
+                publicLog: appendPublicLog(state, outcomeLog),
+                updatedAt: now(),
+            });
         }
         else {
-            if (response !== "missed")
-                tx.update(target.ref, { health });
-            tx.update(room, { phase: "play_phase", updatedAt: now() });
+            if (response !== "missed") {
+                tx.update(target.ref, {
+                    health,
+                    lastDamageBy: String(pending.get("actorPlayerId") ?? ""),
+                });
+            }
+            tx.update(room, {
+                phase: "play_phase",
+                publicLog: appendPublicLog(state, outcomeLog),
+                updatedAt: now(),
+            });
         }
     });
     return {};
@@ -451,6 +470,41 @@ exports.resolveDying = (0, https_1.onCall)(async (request) => {
         }
         else
             tx.update(player.ref, { health: 0, isAlive: false });
+    });
+    return {};
+});
+/** Any living player may spend a Beer to save the player currently dying. */
+exports.saveDyingPlayer = (0, https_1.onCall)(async (request) => {
+    const uid = requireUser(request);
+    const id = roomId(request.data);
+    const targetId = String(request.data.targetPlayerId ?? "");
+    const cardId = String(request.data.cardId ?? "");
+    if (!targetId || !cardId || typeOf(cardId) !== "beer")
+        throw new https_1.HttpsError("invalid-argument", "Cần một lá Beer hợp lệ.");
+    const room = db.doc(`rooms/${id}`);
+    await db.runTransaction(async (tx) => {
+        const state = await tx.get(room);
+        const helper = await tx.get(room.collection("players").doc(uid));
+        const target = await tx.get(room.collection("players").doc(targetId));
+        const helperState = await tx.get(room.collection("privateStates").doc(uid));
+        const deck = await tx.get(room.collection("serverState").doc("deck"));
+        if (!state.exists || state.get("phase") !== "dying" || state.get("dyingPlayerId") !== targetId || !helper.exists || helper.get("isAlive") === false || !target.exists)
+            throw new https_1.HttpsError("failed-precondition", "Không thể cứu người chơi lúc này.");
+        const hand = remove([...(helperState.get("handCardIds") ?? [])], cardId);
+        const discard = [...(deck.get("discardPile") ?? []), cardId];
+        const health = Number(target.get("health") ?? 0) + 1;
+        tx.update(helperState.ref, { handCardIds: hand });
+        tx.update(helper.ref, { cardCount: hand.length });
+        tx.update(target.ref, { health });
+        tx.update(deck.ref, { discardPile: discard });
+        tx.update(room, {
+            phase: health >= 1 ? "play_phase" : "dying",
+            dyingPlayerId: health >= 1 ? admin.firestore.FieldValue.delete() : targetId,
+            discardCount: discard.length,
+            discardTopCardId: cardId,
+            publicLog: appendPublicLog(state, `save:${uid}:${cardId}:${targetId}`),
+            updatedAt: now(),
+        });
     });
     return {};
 });

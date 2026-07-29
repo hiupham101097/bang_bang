@@ -63,6 +63,10 @@ class HybridOnlineRoomRepository implements OnlineRoomRepository {
 
   @override
   Future<PlayerProfile> ensureSignedIn() async {
+    // Once a Functions/Firebase mutation falls back to the local repository,
+    // every following read must use the same local UID. Mixing it with the
+    // Firebase anonymous UID makes the room owner look like a guest.
+    if (_useFallback) return _fallback.ensureSignedIn();
     try {
       final user =
           firebaseAuth.currentUser ??
@@ -259,8 +263,10 @@ class HybridOnlineRoomRepository implements OnlineRoomRepository {
           (data['judgmentsResolvedForTurn'] as num?)?.toInt() ?? 0,
       hasDrawnThisTurn: data['hasDrawnThisTurn'] as bool? ?? false,
       cardsPlayedThisTurn: (data['cardsPlayedThisTurn'] as num?)?.toInt() ?? 0,
+      bangUsedThisTurn: (data['bangUsedThisTurn'] as num?)?.toInt() ?? 0,
       publicLog: List<String>.from(data['publicLog'] as List? ?? const []),
       discardTopCardId: data['discardTopCardId'] as String?,
+      dyingPlayerId: data['dyingPlayerId'] as String?,
       settings: RoomSettings(
         roomName: data['roomName'] as String? ?? 'Phòng chưa đặt tên',
         maxPlayers: (data['maxPlayers'] as num?)?.toInt() ?? 8,
@@ -309,6 +315,8 @@ class HybridOnlineRoomRepository implements OnlineRoomRepository {
       cardCount: (data['cardCount'] as num?)?.toInt() ?? 0,
       isAlive: data['isAlive'] as bool? ?? true,
       characterId: data['characterId'] as String?,
+      revealedRole: data['revealedRole'] as String?,
+      attackRange: (data['attackRange'] as num?)?.toInt() ?? 1,
       equipment: [
         for (final key in const [
           'weaponCardId',

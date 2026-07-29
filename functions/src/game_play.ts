@@ -114,7 +114,6 @@ export const playCard = onCall(async (request) => {
       !state.exists ||
       state.get("phase") !== "play_phase" ||
       state.get("currentTurnPlayerId") !== uid ||
-      Number(state.get("cardsPlayedThisTurn") ?? 0) >= 1 ||
       !actor.exists ||
       action.exists
     )
@@ -233,6 +232,7 @@ export const respondToAction = onCall(async (request) => {
   const cardId = request.data.cardId as string | undefined;
   const room = db.doc(`rooms/${id}`);
   await db.runTransaction(async (tx) => {
+    const state = await tx.get(room);
     const pending = await tx.get(
       room.collection("pendingActions").doc(pendingId),
     );
@@ -264,12 +264,32 @@ export const respondToAction = onCall(async (request) => {
       });
     } else health--;
     tx.delete(pending.ref);
+    const outcomeLog = response === "missed"
+      ? `dodge:${uid}:${cardId}:${pending.get("actorPlayerId") ?? ""}`
+      : `damage:${uid}:bang:${pending.get("actorPlayerId") ?? ""}`;
     if (health <= 0) {
-      tx.update(target.ref, { health });
-      tx.update(room, { phase: "dying", dyingPlayerId: uid, updatedAt: now() });
+      tx.update(target.ref, {
+        health,
+        lastDamageBy: String(pending.get("actorPlayerId") ?? ""),
+      });
+      tx.update(room, {
+        phase: "dying",
+        dyingPlayerId: uid,
+        publicLog: appendPublicLog(state, outcomeLog),
+        updatedAt: now(),
+      });
     } else {
-      if (response !== "missed") tx.update(target.ref, { health });
-      tx.update(room, { phase: "play_phase", updatedAt: now() });
+      if (response !== "missed") {
+        tx.update(target.ref, {
+          health,
+          lastDamageBy: String(pending.get("actorPlayerId") ?? ""),
+        });
+      }
+      tx.update(room, {
+        phase: "play_phase",
+        publicLog: appendPublicLog(state, outcomeLog),
+        updatedAt: now(),
+      });
     }
   });
   return {};
@@ -470,6 +490,42 @@ export const resolveDying = onCall(async (request) => {
         updatedAt: now(),
       });
     } else tx.update(player.ref, { health: 0, isAlive: false });
+  });
+  return {};
+});
+
+/** Any living player may spend a Beer to save the player currently dying. */
+export const saveDyingPlayer = onCall(async (request) => {
+  const uid = requireUser(request);
+  const id = roomId(request.data);
+  const targetId = String(request.data.targetPlayerId ?? "");
+  const cardId = String(request.data.cardId ?? "");
+  if (!targetId || !cardId || typeOf(cardId) !== "beer")
+    throw new HttpsError("invalid-argument", "Cần một lá Beer hợp lệ.");
+  const room = db.doc(`rooms/${id}`);
+  await db.runTransaction(async (tx) => {
+    const state = await tx.get(room);
+    const helper = await tx.get(room.collection("players").doc(uid));
+    const target = await tx.get(room.collection("players").doc(targetId));
+    const helperState = await tx.get(room.collection("privateStates").doc(uid));
+    const deck = await tx.get(room.collection("serverState").doc("deck"));
+    if (!state.exists || state.get("phase") !== "dying" || state.get("dyingPlayerId") !== targetId || !helper.exists || helper.get("isAlive") === false || !target.exists)
+      throw new HttpsError("failed-precondition", "Không thể cứu người chơi lúc này.");
+    const hand = remove([...(helperState.get("handCardIds") ?? [])], cardId);
+    const discard = [...(deck.get("discardPile") ?? []), cardId];
+    const health = Number(target.get("health") ?? 0) + 1;
+    tx.update(helperState.ref, { handCardIds: hand });
+    tx.update(helper.ref, { cardCount: hand.length });
+    tx.update(target.ref, { health });
+    tx.update(deck.ref, { discardPile: discard });
+    tx.update(room, {
+      phase: health >= 1 ? "play_phase" : "dying",
+      dyingPlayerId: health >= 1 ? admin.firestore.FieldValue.delete() : targetId,
+      discardCount: discard.length,
+      discardTopCardId: cardId,
+      publicLog: appendPublicLog(state, `save:${uid}:${cardId}:${targetId}`),
+      updatedAt: now(),
+    });
   });
   return {};
 });

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -6,6 +7,9 @@ import 'audio_service.dart';
 import 'card_effect_overlay.dart';
 import 'data/online_room_repository.dart';
 import 'domain/online_models.dart';
+import 'game_card_widget.dart';
+import 'game_engine.dart';
+import 'voice_chat_service.dart';
 
 /// Minimal authoritative online table. Card effects stay in Cloud Functions;
 /// this screen only asks the server to advance the currently visible phase.
@@ -18,6 +22,202 @@ class OnlineBattleScreen extends StatelessWidget {
 
   final OnlineRoomRepository repository;
   final OnlineRoom room;
+  static bool _firstTutorialHandled = false;
+  static bool _hideTutorialForSession = false;
+
+  void _showFirstTimeTutorial(BuildContext context) {
+    var step = 0;
+    var dontShowAgain = false;
+    const steps = [
+      (
+        'AI ĐANG TỚI LƯỢT?',
+        'Ghế có viền vàng là người đang chơi. Đồng hồ phía trên cho biết thời gian còn lại.',
+        Icons.person_pin_circle_outlined,
+      ),
+      (
+        'RÚT 2 LÁ',
+        'Khi đến lượt bạn, hãy hoàn thành phán xét đầu lượt rồi rút 2 lá.',
+        Icons.style_outlined,
+      ),
+      (
+        'CHỌN LÁ VÀ MỤC TIÊU',
+        'Chạm lá bài để xem chức năng. Khi cần mục tiêu, hãy chọn người chơi hợp lệ.',
+        Icons.ads_click_outlined,
+      ),
+      (
+        'LÁ ĐANG ĐÁNH',
+        'Lá vừa dùng và nhật ký hành động được công khai để mọi người theo dõi.',
+        Icons.visibility_outlined,
+      ),
+      (
+        'PHẢN ỨNG PHÒNG THỦ',
+        'Khi bị BANG, bạn có thời gian dùng NÉ hoặc chọn nhận sát thương.',
+        Icons.shield_outlined,
+      ),
+      (
+        'KẾT THÚC LƯỢT',
+        'Trước khi kết thúc, số lá giữ lại không được vượt quá số máu hiện tại.',
+        Icons.flag_outlined,
+      ),
+    ];
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final item = steps[step];
+          return AlertDialog(
+            title: Text('${step + 1}/${steps.length} · ${item.$1}'),
+            content: SizedBox(
+              width: 360,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(item.$3, size: 48, color: const Color(0xffffc451)),
+                  const SizedBox(height: 14),
+                  Text(item.$2, textAlign: TextAlign.center),
+                  const SizedBox(height: 10),
+                  CheckboxListTile(
+                    value: dontShowAgain,
+                    onChanged: (value) =>
+                        setDialogState(() => dontShowAgain = value ?? false),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      'Không hiển thị lại trong phiên này',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  _hideTutorialForSession = dontShowAgain;
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text('BỎ QUA'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  if (step == steps.length - 1) {
+                    _hideTutorialForSession = dontShowAgain;
+                    Navigator.pop(dialogContext);
+                    return;
+                  }
+                  setDialogState(() => step++);
+                },
+                child: Text(
+                  step == steps.length - 1 ? 'HOÀN TẤT' : 'TIẾP THEO',
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showGuide(BuildContext context, String phase, bool isMyTurn) {
+    final title = switch (phase) {
+      'turn_start' => isMyTurn ? 'BẮT ĐẦU LƯỢT CỦA BẠN' : 'ĐANG CHỜ LƯỢT',
+      'play_phase' => isMyTurn ? 'ĐÁNH BÀI' : 'ĐANG CHỜ NGƯỜI CHƠI',
+      'discard_phase' => 'BỎ BÀI DƯ',
+      'waiting_response' => 'PHẢN ỨNG VỚI BANG!',
+      'waiting_multi_response' => 'PHẢN ỨNG TẤN CÔNG DIỆN RỘNG',
+      'waiting_duel_response' => 'PHẢN ỨNG ĐẤU SÚNG',
+      _ => 'HƯỚNG DẪN TRONG TRẬN',
+    };
+    final lines = switch (phase) {
+      'turn_start' =>
+        isMyTurn
+            ? const [
+                '• Phán xét trước nếu bạn có Dynamite hoặc Jail.',
+                '• Sau đó rút 2 lá để vào bước đánh bài.',
+              ]
+            : const [
+                '• Ghế viền vàng là người đang tới lượt.',
+                '• Chờ họ rút bài hoặc hết giờ.',
+              ],
+      'play_phase' =>
+        isMyTurn
+            ? const [
+                '• Chạm lá bài để xem chức năng và chọn mục tiêu.',
+                '• BANG chỉ bắn mục tiêu trong tầm; mục tiêu có thể dùng NÉ.',
+                '• Bấm KẾT THÚC LƯỢT khi không dùng thêm bài.',
+              ]
+            : const [
+                '• Theo dõi lá đang đánh ở giữa bàn.',
+                '• Bạn chỉ thao tác khi được yêu cầu phản ứng.',
+              ],
+      'discard_phase' => const [
+        '• Số lá giữ lại không được vượt quá số máu hiện tại.',
+        '• Chọn các lá cần bỏ; lượt chỉ chuyển sau khi bỏ đủ.',
+      ],
+      'waiting_response' => const [
+        '• Người bị BANG có 8 giây để dùng NÉ hoặc nhận sát thương.',
+        '• Barrel hoặc kỹ năng nhân vật có thể tạo thêm cách né.',
+      ],
+      'waiting_multi_response' => const [
+        '• Gatling cần NÉ; Indians cần BANG để chống trả.',
+        '• Hết thời gian sẽ tự nhận sát thương.',
+      ],
+      'waiting_duel_response' => const [
+        '• Lần lượt dùng BANG để đáp trả.',
+        '• Không có BANG thì mất 1 máu.',
+      ],
+      _ => const ['• Theo dõi thông báo giữa bàn để biết bước tiếp theo.'],
+    };
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: lines
+              .map(
+                (line) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(line),
+                ),
+              )
+              .toList(),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('ĐÃ HIỂU'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showActionLog(BuildContext context) => showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('NHẬT KÝ HÀNH ĐỘNG'),
+      content: SizedBox(
+        width: 380,
+        child: ListView.separated(
+          shrinkWrap: true,
+          itemCount: room.publicLog.reversed.take(20).length,
+          separatorBuilder: (_, _) => const Divider(height: 10),
+          itemBuilder: (_, index) => Text(
+            _publicLogLabel(room, room.publicLog.reversed.elementAt(index)),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: const Text('ĐÓNG'),
+        ),
+      ],
+    ),
+  );
 
   Future<void> _call(BuildContext context, String name) async {
     try {
@@ -43,8 +243,12 @@ class OnlineBattleScreen extends StatelessWidget {
       final cardId = payload['cardId'] as String? ?? '';
       if (cardId.startsWith('bang_')) {
         GameAudio.instance.playSfx('bang_shot');
+      } else if (cardId.startsWith('gatling_')) {
+        GameAudio.instance.playSfx('bang_shot');
       } else if (cardId.startsWith('dodge_')) {
         GameAudio.instance.playSfx('dodge');
+      } else if (cardId.startsWith('beer_') || cardId.startsWith('saloon_')) {
+        GameAudio.instance.playSfx('win');
       } else if (name == 'drawTurnCards' || name == 'drawCharacterTurnCards') {
         GameAudio.instance.playSfx('card_draw');
       } else if (name == 'acceptBangDamage') {
@@ -62,6 +266,198 @@ class OnlineBattleScreen extends StatelessWidget {
     }
   }
 
+  Future<void> _showChat(BuildContext context) async {
+    final controller = TextEditingController();
+    final voice = GameVoiceChat.instance;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+          ),
+          child: SizedBox(
+            height: 420,
+            child: Column(
+              children: [
+                const ListTile(
+                  leading: Icon(Icons.forum_outlined),
+                  title: Text('CHAT PHÒNG'),
+                  subtitle: Text('Tin nhắn tối đa 140 ký tự.'),
+                ),
+                Expanded(
+                  child: StreamBuilder<List<RoomChatMessage>>(
+                    stream: voice.messageStream,
+                    initialData: voice.messages,
+                    builder: (context, snapshot) {
+                      final messages = snapshot.data ?? const [];
+                      if (messages.isEmpty) {
+                        return const Center(child: Text('Chưa có tin nhắn.'));
+                      }
+                      return ListView.builder(
+                        reverse: true,
+                        itemCount: messages.length,
+                        itemBuilder: (context, index) {
+                          final message = messages[index];
+                          final time = message.sentAt == null
+                              ? ''
+                              : TimeOfDay.fromDateTime(
+                                  message.sentAt!,
+                                ).format(context);
+                          return ListTile(
+                            dense: true,
+                            title: Text(message.authorName),
+                            subtitle: Text(message.text),
+                            trailing: Text(
+                              time,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Colors.white54,
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: controller,
+                          maxLength: 140,
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: (text) async {
+                            if (text.trim().isEmpty) return;
+                            try {
+                              await voice.sendText(text, authorName: 'Cao bồi');
+                              controller.clear();
+                            } catch (error) {
+                              if (sheetContext.mounted) {
+                                ScaffoldMessenger.of(sheetContext).showSnackBar(
+                                  SnackBar(content: Text('$error')),
+                                );
+                              }
+                            }
+                          },
+                          decoration: const InputDecoration(
+                            counterText: '',
+                            hintText: 'Nhập tin nhắn…',
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Gửi',
+                        icon: const Icon(Icons.send),
+                        onPressed: () async {
+                          final text = controller.text;
+                          if (text.trim().isEmpty) return;
+                          try {
+                            await voice.sendText(text, authorName: 'Cao bồi');
+                            controller.clear();
+                          } catch (error) {
+                            if (sheetContext.mounted) {
+                              ScaffoldMessenger.of(
+                                sheetContext,
+                              ).showSnackBar(SnackBar(content: Text('$error')));
+                            }
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    controller.dispose();
+  }
+
+  Future<void> _showVoice(BuildContext context) => showModalBottomSheet<void>(
+    context: context,
+    builder: (sheetContext) => SafeArea(
+      child: AnimatedBuilder(
+        animation: GameVoiceChat.instance,
+        builder: (context, _) {
+          final voice = GameVoiceChat.instance;
+          final joinedThisRoom = voice.isJoined && voice.roomId == room.id;
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  joinedThisRoom ? Icons.record_voice_over : Icons.mic_none,
+                  size: 44,
+                  color: const Color(0xffffc451),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'VOICE PHÒNG',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  joinedThisRoom
+                      ? 'Đang kết nối ${voice.participantCount} người chơi khác.'
+                      : 'Âm thanh đi trực tiếp giữa người chơi; Firebase chỉ truyền tín hiệu kết nối.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70),
+                ),
+                const SizedBox(height: 14),
+                if (!joinedThisRoom)
+                  FilledButton.icon(
+                    onPressed: voice.isJoining
+                        ? null
+                        : () async {
+                            try {
+                              await voice.join(room.id);
+                            } catch (error) {
+                              if (sheetContext.mounted) {
+                                ScaffoldMessenger.of(sheetContext).showSnackBar(
+                                  SnackBar(content: Text('$error')),
+                                );
+                              }
+                            }
+                          },
+                    icon: const Icon(Icons.mic),
+                    label: Text(
+                      voice.isJoining ? 'ĐANG KẾT NỐI…' : 'THAM GIA VOICE',
+                    ),
+                  )
+                else
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      FilledButton.tonalIcon(
+                        onPressed: () => voice.setMuted(!voice.isMuted),
+                        icon: Icon(voice.isMuted ? Icons.mic_off : Icons.mic),
+                        label: Text(voice.isMuted ? 'BẬT MIC' : 'TẮT MIC'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: voice.leave,
+                        icon: const Icon(Icons.call_end),
+                        label: const Text('RỜI VOICE'),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    ),
+  );
+
   Future<void> _playCard(
     BuildContext context,
     String cardId,
@@ -75,28 +471,76 @@ class OnlineBattleScreen extends StatelessWidget {
         cardId.startsWith('cat_balou_') ||
         cardId.startsWith('duello_');
     if (needsTarget) {
+      final actor = room.memberFor(playerId);
       targetPlayerId = await showModalBottomSheet<String>(
         context: context,
         builder: (sheetContext) => SafeArea(
           child: ListView(
             shrinkWrap: true,
             children: [
-              const ListTile(title: Text('CHỌN MỤC TIÊU')),
-              for (final member in room.members.where(
-                (member) =>
-                    member.id != playerId &&
-                    member.isAlive &&
-                    ((!cardId.startsWith('panico_') &&
-                            !cardId.startsWith('cat_balou_')) ||
-                        member.cardCount > 0 ||
-                        member.equipment.isNotEmpty) &&
-                    (!cardId.startsWith('panico_') ||
-                        _distanceBetween(room, playerId, member.id) <= 1),
-              ))
-                ListTile(
-                  leading: Icon(member.isBot ? Icons.smart_toy : Icons.person),
-                  title: Text(member.displayName),
-                  onTap: () => Navigator.pop(sheetContext, member.id),
+              ListTile(
+                title: Text('CHỌN MỤC TIÊU · ${_cardLabel(cardId)}'),
+                subtitle: Text(
+                  cardId.startsWith('bang_')
+                      ? 'Tầm súng hiện tại: ${actor?.attackRange ?? 1}'
+                      : 'Mục tiêu hợp lệ được làm sáng.',
+                ),
+              ),
+              for (final member in room.members.where((member) {
+                if (member.id == playerId || !member.isAlive) return false;
+                if (!cardId.startsWith('bang_')) return true;
+                final distance = _distanceBetween(room, playerId, member.id);
+                return _targetBlockedReason(
+                      room: room,
+                      cardId: cardId,
+                      actor: actor,
+                      target: member,
+                      distance: distance,
+                    ) ==
+                    null;
+              }))
+                Builder(
+                  builder: (context) {
+                    final distance = _distanceBetween(
+                      room,
+                      playerId,
+                      member.id,
+                    );
+                    final reason = _targetBlockedReason(
+                      room: room,
+                      cardId: cardId,
+                      actor: actor,
+                      target: member,
+                      distance: distance,
+                    );
+                    final enabled = reason == null;
+                    return ListTile(
+                      enabled: enabled,
+                      leading: Icon(
+                        member.isBot ? Icons.smart_toy : Icons.person,
+                        color: enabled
+                            ? const Color(0xffffc451)
+                            : Colors.white38,
+                      ),
+                      title: Text(member.displayName),
+                      subtitle: Text(
+                        enabled
+                            ? 'Khoảng cách: $distance · Có thể chọn'
+                            : 'Khoảng cách: $distance · $reason',
+                        style: TextStyle(
+                          color: enabled ? Colors.white70 : Colors.redAccent,
+                          fontSize: 12,
+                        ),
+                      ),
+                      trailing: Icon(
+                        enabled ? Icons.check_circle : Icons.block,
+                        color: enabled ? Colors.greenAccent : Colors.redAccent,
+                      ),
+                      onTap: enabled
+                          ? () => Navigator.pop(sheetContext, member.id)
+                          : null,
+                    );
+                  },
                 ),
             ],
           ),
@@ -456,20 +900,69 @@ class OnlineBattleScreen extends StatelessWidget {
   Widget build(BuildContext context) => FutureBuilder<PlayerProfile>(
     future: repository.ensureSignedIn(),
     builder: (context, profileSnapshot) {
+      if (profileSnapshot.hasData &&
+          !_firstTutorialHandled &&
+          !_hideTutorialForSession) {
+        _firstTutorialHandled = true;
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _showFirstTimeTutorial(context),
+        );
+      }
       final playerId = profileSnapshot.data?.uid;
       final activePlayer = room.memberFor(room.currentTurnPlayerId ?? '');
       final isMyTurn = playerId != null && playerId == room.currentTurnPlayerId;
-      final canPlay =
-          isMyTurn &&
-          room.phase == 'play_phase' &&
-          room.cardsPlayedThisTurn == 0;
+      final canPlay = isMyTurn && room.phase == 'play_phase';
       final phase = room.phase;
       final needsJudgment = room.judgmentsResolvedForTurn != room.turnNumber;
-      final canJudge = isMyTurn && phase == 'turn_start' && needsJudgment;
+      final canResolveJudgment =
+          isMyTurn && phase == 'turn_start' && needsJudgment;
       final canDraw = isMyTurn && phase == 'turn_start' && !needsJudgment;
       return Scaffold(
         backgroundColor: const Color(0xff160c08),
-        appBar: AppBar(title: const Text('BANG BANG — Bàn đấu')),
+        appBar: AppBar(
+          title: const Text('BANG BANG — Bàn đấu'),
+          actions: [
+            if (room.settings.voiceEnabled)
+              AnimatedBuilder(
+                animation: GameVoiceChat.instance,
+                builder: (context, _) {
+                  final voice = GameVoiceChat.instance;
+                  final joinedThisRoom =
+                      voice.isJoined && voice.roomId == room.id;
+                  return IconButton(
+                    tooltip: joinedThisRoom ? 'Voice đang bật' : 'Voice phòng',
+                    onPressed: () => _showVoice(context),
+                    icon: Icon(
+                      voice.isMuted
+                          ? Icons.mic_off
+                          : joinedThisRoom
+                          ? Icons.mic
+                          : Icons.mic_none,
+                      color: joinedThisRoom ? const Color(0xffffc451) : null,
+                    ),
+                  );
+                },
+              ),
+            if (room.settings.chatEnabled)
+              IconButton(
+                tooltip: 'Chat phòng',
+                onPressed: () => _showChat(context),
+                icon: const Icon(Icons.forum_outlined),
+              ),
+            IconButton(
+              tooltip: 'Nhật ký hành động',
+              onPressed: room.publicLog.isEmpty
+                  ? null
+                  : () => _showActionLog(context),
+              icon: const Icon(Icons.history),
+            ),
+            IconButton(
+              tooltip: 'Hướng dẫn',
+              onPressed: () => _showGuide(context, phase, isMyTurn),
+              icon: const Icon(Icons.help_outline),
+            ),
+          ],
+        ),
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(20),
@@ -494,90 +987,26 @@ class OnlineBattleScreen extends StatelessWidget {
                 ),
                 if (isMyTurn && room.phase == 'play_phase')
                   Text(
-                    room.cardsPlayedThisTurn == 0
-                        ? 'Bạn còn 1 lá để dùng trong lượt này.'
-                        : 'Bạn đã dùng lá duy nhất của lượt này.',
+                    'Bạn có thể dùng thẻ chức năng/trang bị; BANG bị giới hạn theo kỹ năng và súng.',
                     style: const TextStyle(color: Color(0xffffd272)),
                   ),
                 const SizedBox(height: 10),
                 _TurnSteps(phase: phase),
-                const SizedBox(height: 20),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: room.members
-                      .map(
-                        (member) => Chip(
-                          backgroundColor: member.id == room.currentTurnPlayerId
-                              ? const Color(0xff6f4214)
-                              : null,
-                          side: BorderSide(
-                            color: member.id == room.currentTurnPlayerId
-                                ? const Color(0xffffc451)
-                                : Colors.transparent,
-                            width: 2,
-                          ),
-                          label: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '${member.displayName}  ${member.isAlive ? '${member.health}/${member.maxHealth} máu · ${member.cardCount} bài' : 'ĐÃ LOẠI'}',
-                              ),
-                              if (member.equipment.isNotEmpty)
-                                Text(
-                                  member.equipment.map(_cardLabel).join(' · '),
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 9,
-                                    color: Color(0xffffd272),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          avatar: Icon(
-                            member.isBot ? Icons.smart_toy : Icons.person,
-                          ),
-                        ),
-                      )
-                      .toList(),
+                const SizedBox(height: 12),
+                _PlayerTable(
+                  members: room.members,
+                  currentTurnPlayerId: room.currentTurnPlayerId,
+                  latestPublicLog: room.publicLog.isEmpty
+                      ? null
+                      : room.publicLog.last,
                 ),
-                if (room.discardTopCardId != null) ...[
-                  const SizedBox(height: 14),
-                  Container(
-                    width: 230,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xfff4dfac),
-                      border: Border.all(
-                        color: const Color(0xffffc451),
-                        width: 2,
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Column(
-                      children: [
-                        const Text(
-                          'LÁ VỪA ĐÁNH',
-                          style: TextStyle(
-                            color: Color(0xff4d2410),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        Text(
-                          _cardLabel(room.discardTopCardId!),
-                          style: const TextStyle(
-                            color: Color(0xff2b160b),
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ],
-                    ),
+                if (_latestPublicCardId(room) != null) ...[
+                  const SizedBox(height: 12),
+                  _PublicCardStage(
+                    cardId: _latestPublicCardId(room)!,
+                    summary: room.publicLog.isEmpty
+                        ? 'Lá bài mới được đánh'
+                        : _publicLogLabel(room, room.publicLog.last),
                   ),
                 ],
                 if (room.publicLog.isNotEmpty) ...[
@@ -631,35 +1060,166 @@ class OnlineBattleScreen extends StatelessWidget {
                       );
                     }
                     return SizedBox(
-                      height: 76,
+                      height: 112,
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemCount: cards.length,
-                        separatorBuilder: (_, _) => const SizedBox(width: 8),
-                        itemBuilder: (context, index) => OutlinedButton(
-                          onPressed: canPlay
-                              ? () => _playCard(context, cards[index], playerId)
-                              : isMyTurn &&
-                                    phase == 'discard_phase' &&
-                                    discardRequired > 0
-                              ? () => _discardExcessCards(
-                                  context,
-                                  cards,
-                                  discardRequired,
-                                )
-                              : null,
-                          child: Text(
-                            '${phase == 'discard_phase'
-                                ? 'BỎ'
-                                : _isEquipmentCard(cards[index])
-                                ? 'ĐẶT'
-                                : 'ĐÁNH'} ${_cardLabel(cards[index])}',
-                          ),
-                        ),
+                        separatorBuilder: (_, _) => const SizedBox(width: 7),
+                        itemBuilder: (context, index) {
+                          final cardId = cards[index];
+                          final canDiscard =
+                              isMyTurn &&
+                              phase == 'discard_phase' &&
+                              discardRequired > 0;
+                          final isBang = cardId.startsWith('bang_');
+                          final unlimitedBang =
+                              activePlayer?.characterId == 'willy_the_kid' ||
+                              activePlayer?.equipment.any(
+                                    (card) => card.startsWith('volcanic_'),
+                                  ) ==
+                                  true;
+                          final bangBlocked =
+                              isBang &&
+                              room.bangUsedThisTurn >= 1 &&
+                              !unlimitedBang;
+                          final enabled =
+                              (canPlay && !bangBlocked) || canDiscard;
+                          final actionLabel = bangBlocked
+                              ? 'ĐÃ DÙNG BANG'
+                              : phase == 'discard_phase'
+                              ? 'BỎ'
+                              : _isEquipmentCard(cardId)
+                              ? 'ĐẶT'
+                              : 'ĐÁNH';
+                          return Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              GameCardWidget(
+                                card: _publicGameCard(cardId),
+                                width: 70,
+                                isEnabled: enabled,
+                                onTap: !enabled
+                                    ? null
+                                    : () => canPlay
+                                          ? _playCard(context, cardId, playerId)
+                                          : _discardExcessCards(
+                                              context,
+                                              cards,
+                                              discardRequired,
+                                            ),
+                              ),
+                              Positioned(
+                                left: 4,
+                                right: 4,
+                                bottom: 3,
+                                child: IgnorePointer(
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xaa211109),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 2,
+                                      ),
+                                      child: Text(
+                                        actionLabel,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 8,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     );
                   },
                 ),
+                if (phase == 'dying' && room.dyingPlayerId != null)
+                  StreamBuilder<List<String>>(
+                    stream: repository.watchHand(room.id),
+                    builder: (context, snapshot) {
+                      final hand = snapshot.data ?? const <String>[];
+                      final beer = hand
+                          .where((card) => card.startsWith('beer_'))
+                          .firstOrNull;
+                      final dying = room.memberFor(room.dyingPlayerId!);
+                      final isDyingPlayer = playerId == room.dyingPlayerId;
+                      final requiredBeers = math.max(
+                        1,
+                        1 - (dying?.health ?? 0),
+                      );
+                      final canSelfSave =
+                          hand
+                              .where((card) => card.startsWith('beer_'))
+                              .length >=
+                          requiredBeers;
+                      return Card(
+                        color: const Color(0xff5a1b15),
+                        child: ListTile(
+                          leading: const Icon(
+                            Icons.favorite,
+                            color: Colors.redAccent,
+                          ),
+                          title: Text(
+                            '${dying?.displayName ?? 'Người chơi'} đang hấp hối',
+                          ),
+                          subtitle: const Text(
+                            'Dùng Beer để cứu họ trước khi bị loại.',
+                          ),
+                          trailing: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              if (isDyingPlayer)
+                                FilledButton.tonal(
+                                  onPressed: canSelfSave
+                                      ? () => _callPayload(
+                                          context,
+                                          'resolveDying',
+                                          {'useBeer': true},
+                                        )
+                                      : null,
+                                  child: Text('TỰ CỨU ($requiredBeers BEER)'),
+                                ),
+                              if (isDyingPlayer) const SizedBox(height: 6),
+                              if (isDyingPlayer)
+                                OutlinedButton(
+                                  onPressed: () => _callPayload(
+                                    context,
+                                    'resolveDying',
+                                    {'useBeer': false},
+                                  ),
+                                  child: const Text('BỊ LOẠI'),
+                                )
+                              else
+                                FilledButton(
+                                  onPressed: beer == null || playerId == null
+                                      ? null
+                                      : () => _callPayload(
+                                          context,
+                                          'saveDyingPlayer',
+                                          {
+                                            'targetPlayerId':
+                                                room.dyingPlayerId,
+                                            'cardId': beer,
+                                          },
+                                        ),
+                                  child: const Text('DÙNG BEER'),
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 if (isMyTurn &&
                     activePlayer?.characterId == 'sid_ketchum' &&
                     activePlayer!.health < activePlayer.maxHealth)
@@ -958,12 +1518,12 @@ class OnlineBattleScreen extends StatelessWidget {
                   },
                 ),
                 const SizedBox(height: 16),
-                if (canDraw)
+                if (canResolveJudgment)
                   FilledButton(
                     onPressed: () => _call(context, 'resolveTurnJudgments'),
                     child: const Text('PHÁN XÉT ĐẦU LƯỢT'),
                   ),
-                if (canJudge)
+                if (canDraw)
                   FilledButton(
                     onPressed: () =>
                         _drawTurn(context, playerId, activePlayer?.characterId),
@@ -981,6 +1541,423 @@ class OnlineBattleScreen extends StatelessWidget {
         ),
       );
     },
+  );
+}
+
+String? _latestPublicCardId(OnlineRoom room) {
+  if (room.publicLog.isNotEmpty) {
+    final parts = room.publicLog.last.split(':');
+    if (parts.length > 2 && parts[2].isNotEmpty) return parts[2];
+  }
+  return room.discardTopCardId;
+}
+
+class _PlayerTable extends StatelessWidget {
+  const _PlayerTable({
+    required this.members,
+    required this.currentTurnPlayerId,
+    required this.latestPublicLog,
+  });
+
+  final List<RoomMember> members;
+  final String? currentTurnPlayerId;
+  final String? latestPublicLog;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 186,
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final seatWidth = (constraints.maxWidth / 4.25).clamp(92.0, 138.0);
+        final seatHeight = 60.0;
+        final centerX = constraints.maxWidth / 2;
+        final centerY = 93.0;
+        final radiusX = math.max(
+          0.0,
+          constraints.maxWidth / 2 - seatWidth / 2 - 5,
+        );
+        const radiusY = 58.0;
+        final bang = _bangEvent(latestPublicLog);
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              left: constraints.maxWidth * .18,
+              right: constraints.maxWidth * .18,
+              top: 42,
+              bottom: 32,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xff3a1e10),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xff85552d), width: 2),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0xaa080402), blurRadius: 12),
+                  ],
+                ),
+                child: const Center(
+                  child: Text(
+                    'BÀN ĐẤU',
+                    style: TextStyle(
+                      color: Color(0xffffd272),
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            for (var index = 0; index < members.length; index++)
+              () {
+                final angle =
+                    -math.pi / 2 + (2 * math.pi * index / members.length);
+                final x = centerX + math.cos(angle) * radiusX - seatWidth / 2;
+                final y = centerY + math.sin(angle) * radiusY - seatHeight / 2;
+                final member = members[index];
+                return Positioned(
+                  left: x.clamp(0.0, constraints.maxWidth - seatWidth),
+                  top: y.clamp(0.0, 186 - seatHeight),
+                  width: seatWidth,
+                  height: seatHeight,
+                  child: _PlayerSeat(
+                    member: member,
+                    isCurrent: member.id == currentTurnPlayerId,
+                    isBangShooter: member.id == bang?.shooterId,
+                    isBangTarget: member.id == bang?.targetId,
+                    bangEventId: bang?.id,
+                  ),
+                );
+              }(),
+          ],
+        );
+      },
+    ),
+  );
+}
+
+class _PlayerSeat extends StatefulWidget {
+  const _PlayerSeat({
+    required this.member,
+    required this.isCurrent,
+    required this.isBangShooter,
+    required this.isBangTarget,
+    this.bangEventId,
+  });
+
+  final RoomMember member;
+  final bool isCurrent;
+  final bool isBangShooter;
+  final bool isBangTarget;
+  final String? bangEventId;
+
+  @override
+  State<_PlayerSeat> createState() => _PlayerSeatState();
+}
+
+class _PlayerSeatState extends State<_PlayerSeat> {
+  Timer? _pulse;
+  Timer? _deathEffectTimer;
+  Timer? _bangEffectTimer;
+  bool _bright = true;
+  bool _showDeathEffect = false;
+  bool _showBangEffect = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = Timer.periodic(const Duration(milliseconds: 650), (_) {
+      if (mounted && widget.isCurrent) setState(() => _bright = !_bright);
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _PlayerSeat oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.isCurrent) _bright = true;
+    if (oldWidget.member.isAlive && !widget.member.isAlive) {
+      GameAudio.instance.playSfx('lose');
+      _showDeathEffect = true;
+      _deathEffectTimer?.cancel();
+      _deathEffectTimer = Timer(const Duration(milliseconds: 1250), () {
+        if (mounted) setState(() => _showDeathEffect = false);
+      });
+    }
+    if (widget.isBangTarget && oldWidget.bangEventId != widget.bangEventId) {
+      _showBangEffect = true;
+      _bangEffectTimer?.cancel();
+      _bangEffectTimer = Timer(const Duration(milliseconds: 900), () {
+        if (mounted) setState(() => _showBangEffect = false);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulse?.cancel();
+    _deathEffectTimer?.cancel();
+    _bangEffectTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final member = widget.member;
+    final active = widget.isCurrent;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          decoration: BoxDecoration(
+            color: member.isAlive
+                ? active
+                      ? Color.lerp(
+                          const Color(0xff5a3116),
+                          const Color(0xff8a521d),
+                          _bright ? 1 : .25,
+                        )
+                      : const Color(0xff2a1811)
+                : const Color(0xff16100d),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: active ? const Color(0xffffc451) : const Color(0xff63432e),
+              width: active ? 2 : 1,
+            ),
+            boxShadow: active && _bright
+                ? const [BoxShadow(color: Color(0x99ffb12e), blurRadius: 10)]
+                : null,
+          ),
+          child: Row(
+            children: [
+              Icon(
+                member.isBot ? Icons.smart_toy : Icons.person,
+                size: 18,
+                color: member.isAlive
+                    ? const Color(0xffffd272)
+                    : Colors.white38,
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      active ? 'ĐANG TỚI LƯỢT' : member.displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: active ? 9 : 10,
+                        fontWeight: FontWeight.w800,
+                        color: member.isAlive ? Colors.white : Colors.white38,
+                      ),
+                    ),
+                    Text(
+                      member.isAlive
+                          ? '${member.health}/${member.maxHealth} máu · ${member.cardCount} bài'
+                          : 'ĐÃ BỊ LOẠI',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 8,
+                        color: Colors.white70,
+                      ),
+                    ),
+                    if (member.equipment.isNotEmpty)
+                      Text(
+                        member.equipment.take(2).map(_cardLabel).join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xffffd272),
+                          fontSize: 7,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (_showDeathEffect)
+          const Positioned.fill(
+            child: IgnorePointer(child: DeathEffectOverlay()),
+          ),
+        if (widget.isBangShooter)
+          const Positioned(
+            right: -14,
+            top: -24,
+            child: IgnorePointer(child: BangEffectOverlay(size: 62)),
+          ),
+        if (_showBangEffect)
+          const Positioned.fill(
+            child: IgnorePointer(child: BangEffectOverlay(size: 82)),
+          ),
+      ],
+    );
+  }
+}
+
+class _BangEvent {
+  const _BangEvent({
+    required this.id,
+    required this.shooterId,
+    required this.targetId,
+  });
+
+  final String id;
+  final String shooterId;
+  final String targetId;
+}
+
+_BangEvent? _bangEvent(String? log) {
+  if (log == null) return null;
+  final parts = log.split(':');
+  if (parts.length >= 4 && parts[0] == 'play' && parts[2].startsWith('bang_')) {
+    return _BangEvent(id: log, shooterId: parts[1], targetId: parts[3]);
+  }
+  if (parts.length >= 4 && parts[0] == 'damage' && parts[2] == 'bang') {
+    return _BangEvent(id: log, shooterId: parts[3], targetId: parts[1]);
+  }
+  return null;
+}
+
+class _PublicCardStage extends StatelessWidget {
+  const _PublicCardStage({required this.cardId, required this.summary});
+
+  final String cardId;
+  final String summary;
+
+  @override
+  Widget build(BuildContext context) => AnimatedSwitcher(
+    duration: const Duration(milliseconds: 350),
+    transitionBuilder: (child, animation) => ScaleTransition(
+      scale: CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+      child: FadeTransition(opacity: animation, child: child),
+    ),
+    child: Container(
+      key: ValueKey(cardId),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 9),
+      decoration: BoxDecoration(
+        color: const Color(0xff2b170e),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xffffc451), width: 1.5),
+        boxShadow: const [BoxShadow(color: Color(0x883c1707), blurRadius: 12)],
+      ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              GameCardWidget(card: _publicGameCard(cardId), width: 72),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 180,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'LÁ VỪA ĐÁNH',
+                      style: TextStyle(
+                        color: Color(0xffffd272),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      _cardLabel(cardId),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      summary,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (cardId.startsWith('bang_'))
+            const Positioned(
+              left: 22,
+              top: -18,
+              child: IgnorePointer(child: BangEffectOverlay(size: 70)),
+            ),
+          if (cardId.startsWith('dodge_'))
+            const Positioned(
+              left: 18,
+              top: -10,
+              child: IgnorePointer(child: DodgeEffectOverlay(size: 76)),
+            ),
+          if (cardId.startsWith('beer_') || cardId.startsWith('saloon_'))
+            const Positioned(
+              left: 2,
+              top: -16,
+              child: IgnorePointer(child: HealEffectOverlay(size: 82)),
+            ),
+        ],
+      ),
+    ),
+  );
+}
+
+GameCard _publicGameCard(String cardId) {
+  final parts = cardId.split('_');
+  final rankIndex = parts.indexWhere(
+    (part) => CardRank.values.any((rank) => rank.name == part),
+  );
+  final rank = rankIndex < 0
+      ? CardRank.ace
+      : CardRank.values.firstWhere((value) => value.name == parts[rankIndex]);
+  final suit = CardSuit.values.firstWhere(
+    (value) => value.name == parts.last,
+    orElse: () => CardSuit.spade,
+  );
+  final type = rankIndex < 0 ? parts.first : parts.take(rankIndex).join('_');
+  const assets = <String, String>{
+    'bang': 'bang.png',
+    'dodge': 'ne.png',
+    'beer': 'beer.png',
+    'gatling': 'gatling.png',
+    'indiani': 'indiani.png',
+    'panico': 'panico.png',
+    'cat_balou': 'cat_balou.png',
+    'dilizenza': 'dilizenza.png',
+    'wells_fargo': 'wells_fargo.png',
+    'general_store': 'general_store.png',
+    'duello': 'duello.png',
+    'saloon': 'saloon.png',
+    'barrel': 'barrel.png',
+    'jail': 'jail.png',
+    'dynamite': 'dynamite.png',
+    'volcanic': 'volcanic.png',
+    'mustang': 'mustang.png',
+    'appaloosa': 'appaloosa.png',
+    'gun_range_2': 'gun_range_2.png',
+    'gun_range_3': 'gun_range_3.png',
+    'gun_range_4': 'gun_range_4.png',
+    'gun_range_5': 'gun_range_5.png',
+  };
+  return GameCard(
+    CardType.bang,
+    id: cardId,
+    rank: rank,
+    suit: suit,
+    imageAsset: 'assets/images/cards/${assets[type] ?? 'bang.png'}',
   );
 }
 
@@ -1036,6 +2013,39 @@ String _publicLogLabel(OnlineRoom room, String entry) {
   if (parts.first == 'bot') {
     return '$actorName đã hoàn tất lượt.';
   }
+  if (parts.first == 'dodge') {
+    final attacker = room.memberFor(parts.length > 3 ? parts[3] : '');
+    return attacker == null
+        ? '$actorName đã dùng NÉ.'
+        : '$actorName dùng NÉ, tránh được BANG của ${attacker.displayName}.';
+  }
+  if (parts.first == 'damage') {
+    final attacker = room.memberFor(parts.length > 3 ? parts[3] : '');
+    return attacker == null
+        ? '$actorName mất 1 máu.'
+        : '$actorName mất 1 máu vì BANG của ${attacker.displayName}.';
+  }
+  if (parts.first == 'save') {
+    final target = room.memberFor(parts.length > 3 ? parts[3] : '');
+    return target == null
+        ? '$actorName đã dùng BEER để cứu người chơi.'
+        : '$actorName dùng BEER cứu ${target.displayName}.';
+  }
+  if (parts.first == 'judgment') {
+    final context = parts.length > 3 ? parts[3] : '';
+    final result = parts.length > 4 ? parts[4] : '';
+    final card = parts.length > 2 ? _cardLabel(parts[2]) : 'một lá bài';
+    if (context == 'dynamite') {
+      return result == 'explode'
+          ? '$actorName phán xét $card: DYNAMITE phát nổ, mất 3 máu.'
+          : '$actorName phán xét $card: DYNAMITE không nổ và chuyển đi.';
+    }
+    if (context == 'jail') {
+      return result == 'skip'
+          ? '$actorName phán xét $card: bị JAIL, mất lượt.'
+          : '$actorName phán xét $card: thoát JAIL, chơi lượt bình thường.';
+    }
+  }
 
   final card = parts.length > 2 ? _cardLabel(parts[2]) : 'một lá bài';
   if (parts.first == 'equip') {
@@ -1072,6 +2082,33 @@ int _distanceBetween(OnlineRoom room, String actorId, String targetId) {
           (targetHasMustang ? 1 : 0))
       .clamp(1, 99)
       .toInt();
+}
+
+String? _targetBlockedReason({
+  required OnlineRoom room,
+  required String cardId,
+  required RoomMember? actor,
+  required RoomMember target,
+  required int distance,
+}) {
+  if (cardId.startsWith('bang_') && distance > (actor?.attackRange ?? 1)) {
+    return 'Ngoài tầm súng ${actor?.attackRange ?? 1}';
+  }
+  if (cardId.startsWith('jail_') && target.id == room.sheriffPlayerId) {
+    return 'Không thể nhốt Cảnh sát trưởng';
+  }
+  if (cardId.startsWith('panico_')) {
+    if (distance > 1) return 'Cướp bài chỉ dùng ở khoảng cách 1';
+    if (target.cardCount == 0 && target.equipment.isEmpty) {
+      return 'Mục tiêu không có bài hoặc trang bị';
+    }
+  }
+  if (cardId.startsWith('cat_balou_') &&
+      target.cardCount == 0 &&
+      target.equipment.isEmpty) {
+    return 'Mục tiêu không có bài hoặc trang bị';
+  }
+  return null;
 }
 
 class _TurnCountdown extends StatefulWidget {

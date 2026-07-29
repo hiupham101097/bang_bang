@@ -1,0 +1,23 @@
+{
+  "rules": {
+    "voiceRooms": {
+      "$sessionId": {
+        ".read": "auth != null && root.child('voiceAccess').child($sessionId).child(auth.uid).child('expiresAt').val() > now",
+        "participants": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid && root.child('voiceAccess').child($sessionId).child(auth.uid).child('expiresAt').val() > now"
+          }
+        },
+        "signals": {
+          "$recipient": {
+            ".read": "auth != null && auth.uid === $recipient && root.child('voiceAccess').child($sessionId).child(auth.uid).child('expiresAt').val() > now",
+            "$signalId": {
+              ".write": "auth != null && root.child('voiceAccess').child($sessionId).child(auth.uid).child('expiresAt').val() > now && ((newData.exists() && newData.child('from').val() === auth.uid) || (!newData.exists() && auth.uid === $recipient))"
+            }
+          }
+        }
+      }
+    },
+    "voiceAccess": { ".read": false, ".write": false }
+  }
+}

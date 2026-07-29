@@ -29,6 +29,7 @@ export const resolveElimination = onDocumentUpdated(
       );
       const deck = await tx.get(roomRef.collection("serverState").doc("deck"));
       const role = privateState.get("role") as string | undefined;
+      const eliminatorId = String(eliminated.get("lastDamageBy") ?? "");
       const hand = [...(privateState.get("handCardIds") ?? [])] as string[];
       const equipment = [
         eliminated.get("weaponCardId"),
@@ -45,6 +46,50 @@ export const resolveElimination = onDocumentUpdated(
           tx.get(roomRef.collection("privateStates").doc(p.id)),
         ),
       );
+      const roles = new Map<string, string>();
+      states.forEach((state, index) => roles.set(players[index].id, state.get("role")));
+      const sheriffPenalty: string[] = [];
+      if (role === "deputy" && roles.get(eliminatorId) === "sheriff") {
+        const sheriffIndex = players.findIndex((player) => player.id === eliminatorId);
+        const sheriff = players[sheriffIndex];
+        const sheriffState = states[sheriffIndex];
+        if (sheriff && sheriffState) {
+          const sheriffEquipment = [
+            sheriff.get("weaponCardId"), sheriff.get("barrelCardId"),
+            sheriff.get("mustangCardId"), sheriff.get("appaloosaCardId"),
+            sheriff.get("dynamiteCardId"), sheriff.get("jailCardId"),
+            ...(sheriff.get("equipmentCardIds") ?? []),
+          ].filter(Boolean) as string[];
+          sheriffPenalty.push(
+            ...(sheriffState.get("handCardIds") ?? []),
+            ...sheriffEquipment,
+          );
+          tx.update(sheriffState.ref, { handCardIds: [] });
+          tx.update(sheriff.ref, {
+            cardCount: 0,
+            weaponCardId: admin.firestore.FieldValue.delete(),
+            barrelCardId: admin.firestore.FieldValue.delete(),
+            mustangCardId: admin.firestore.FieldValue.delete(),
+            appaloosaCardId: admin.firestore.FieldValue.delete(),
+            dynamiteCardId: admin.firestore.FieldValue.delete(),
+            jailCardId: admin.firestore.FieldValue.delete(),
+            equipmentCardIds: [],
+          });
+        }
+      }
+      if (role === "outlaw" && eliminatorId) {
+        const killerIndex = players.findIndex((player) => player.id === eliminatorId);
+        const killer = players[killerIndex];
+        const killerState = states[killerIndex];
+        const pile = [...(deck.get("drawPile") ?? [])] as string[];
+        if (killer && killerState && killer.get("isAlive") !== false) {
+          const reward = pile.splice(0, 3);
+          const killerHand = [...(killerState.get("handCardIds") ?? []), ...reward];
+          tx.update(killerState.ref, { handCardIds: killerHand });
+          tx.update(killer.ref, { cardCount: killerHand.length });
+          tx.update(deck.ref, { drawPile: pile });
+        }
+      }
       const vulture = players.find(
         (p, i) =>
           p.get("isAlive") !== false &&
@@ -65,12 +110,18 @@ export const resolveElimination = onDocumentUpdated(
             hand.length +
             equipment.length,
         });
+        if (sheriffPenalty.length > 0) {
+          tx.update(deck.ref, {
+            discardPile: [...(deck.get("discardPile") ?? []), ...sheriffPenalty],
+          });
+        }
       } else
         tx.update(deck.ref, {
           discardPile: [
             ...(deck.get("discardPile") ?? []),
             ...hand,
             ...equipment,
+            ...sheriffPenalty,
           ],
         });
       tx.update(eliminated.ref, {
@@ -89,8 +140,6 @@ export const resolveElimination = onDocumentUpdated(
       const alive = players.filter(
         (p) => p.id !== eliminatedId && p.get("isAlive") !== false,
       );
-      const roles = new Map<string, string>();
-      states.forEach((s, i) => roles.set(players[i].id, s.get("role")));
       const sheriffAlive = alive.some((p) => roles.get(p.id) === "sheriff");
       const outlaws = alive.filter((p) => roles.get(p.id) === "outlaw");
       const renegades = alive.filter((p) => roles.get(p.id) === "renegade");
@@ -110,6 +159,13 @@ export const resolveElimination = onDocumentUpdated(
         ) ?? orderedAlive.at(0);
       const eliminatedWasCurrent =
         room.get("currentTurnPlayerId") === eliminatedId;
+      if (winner) {
+        players.forEach((player) => {
+          tx.update(player.ref, {
+            revealedRole: roles.get(player.id) ?? "unknown",
+          });
+        });
+      }
       tx.update(
         roomRef,
         winner

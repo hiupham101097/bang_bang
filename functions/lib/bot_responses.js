@@ -130,6 +130,7 @@ exports.runBotResponse = (0, firestore_1.onDocumentWritten)("rooms/{roomId}/pend
                 tx.update(action.ref, {
                     targetIndex: nextIndex,
                     currentTargetId: nextTarget,
+                    responseDeadlineAt: admin.firestore.Timestamp.fromMillis(Date.now() + 8000),
                 });
             }
             else {
@@ -159,7 +160,10 @@ exports.runBotResponse = (0, firestore_1.onDocumentWritten)("rooms/{roomId}/pend
             tx.update(deck.ref, {
                 discardPile: [...(deck.get("discardPile") ?? []), bang],
             });
-            tx.update(action.ref, { currentResponderId: other });
+            tx.update(action.ref, {
+                currentResponderId: other,
+                responseDeadlineAt: admin.firestore.Timestamp.fromMillis(Date.now() + 8000),
+            });
         }
         else {
             const health = Number(player.get("health") ?? 0) - 1;

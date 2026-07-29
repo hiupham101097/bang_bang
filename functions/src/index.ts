@@ -10,6 +10,7 @@ export {
   requestEndTurn,
   discardCards,
   resolveDying,
+  saveDyingPlayer,
   resolveTurnTimeout,
 } from "./game_play";
 export { resolveElimination } from "./game_resolution";
@@ -18,6 +19,7 @@ export {
   applySuzyLafayette,
   setBangResponseDeadline,
 } from "./character_triggers";
+export { expireBangResponse, expireSequentialResponse, expireTurn } from "./auto_timeouts";
 export {
   acceptBangDamage,
   chooseGeneralStoreCard,
@@ -306,11 +308,12 @@ export const startGame = onCall(async (request) => {
   await db.runTransaction(async (tx) => {
     const room = await tx.get(ref);
     const players = await tx.get(ref.collection("players"));
+    const caller = players.docs.find((player) => player.id === owner);
     const humans = players.docs.filter((d) => d.get("playerType") === "human");
     const guests = humans.filter((d) => d.id !== owner);
     if (
       !room.exists ||
-      room.get("hostUid") !== owner ||
+      (room.get("hostUid") !== owner && caller?.get("isHost") !== true) ||
       room.get("status") !== "waiting" ||
       players.size < 4 ||
       humans.length < 1 ||
@@ -323,6 +326,7 @@ export const startGame = onCall(async (request) => {
         "Cần đủ 4 người chơi và mọi khách phải sẵn sàng.",
       );
     tx.update(ref, {
+      hostUid: owner,
       status: "starting",
       phase: "assigning_roles",
       startedAt: now(),

@@ -1,6 +1,6 @@
 import * as admin from 'firebase-admin';
-import {onDocumentUpdated} from 'firebase-functions/firestore';
-import {onDocumentCreated} from 'firebase-functions/firestore';
+import { onDocumentUpdated } from 'firebase-functions/firestore';
+import { onDocumentCreated } from 'firebase-functions/firestore';
 
 if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
@@ -28,7 +28,7 @@ export const applyBartCassidyDamage = onDocumentUpdated('rooms/{roomId}/players/
     if ((await tx.get(marker)).exists) return;
     const deck = await tx.get(room.collection('serverState').doc('deck')); const handState = await tx.get(room.collection('privateStates').doc(uid)); const player = await tx.get(room.collection('players').doc(uid));
     const pile = [...(deck.get('drawPile') ?? [])] as string[]; const drawn = pile.splice(0, Math.min(lost, pile.length)); const hand = [...(handState.get('handCardIds') ?? []), ...drawn];
-    tx.set(marker, {type: 'bart_damage', createdAt: admin.firestore.FieldValue.serverTimestamp()}); tx.update(deck.ref, {drawPile: pile}); tx.update(handState.ref, {handCardIds: hand}); tx.update(player.ref, {cardCount: hand.length}); tx.update(room, {deckRemainingCount: pile.length, updatedAt: admin.firestore.FieldValue.serverTimestamp()});
+    tx.set(marker, { type: 'bart_damage', createdAt: admin.firestore.FieldValue.serverTimestamp() }); tx.update(deck.ref, { drawPile: pile }); tx.update(handState.ref, { handCardIds: hand }); tx.update(player.ref, { cardCount: hand.length }); tx.update(room, { deckRemainingCount: pile.length, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
   });
 });
 
@@ -40,6 +40,6 @@ export const applySuzyLafayette = onDocumentUpdated('rooms/{roomId}/privateState
     if ((await tx.get(marker)).exists) return;
     const player = await tx.get(room.collection('players').doc(uid)); if (!player.exists || player.get('characterId') !== 'suzy_lafayette' || player.get('isAlive') === false) return;
     const deck = await tx.get(room.collection('serverState').doc('deck')); const pile = [...(deck.get('drawPile') ?? [])] as string[]; if (!pile.length) return; const card = pile.shift()!;
-    tx.set(marker, {type: 'suzy_empty_hand', createdAt: admin.firestore.FieldValue.serverTimestamp()}); tx.update(deck.ref, {drawPile: pile}); tx.update(after.ref, {handCardIds: [card]}); tx.update(player.ref, {cardCount: 1}); tx.update(room, {deckRemainingCount: pile.length, updatedAt: admin.firestore.FieldValue.serverTimestamp()});
+    tx.set(marker, { type: 'suzy_empty_hand', createdAt: admin.firestore.FieldValue.serverTimestamp() }); tx.update(deck.ref, { drawPile: pile }); tx.update(after.ref, { handCardIds: [card] }); tx.update(player.ref, { cardCount: 1 }); tx.update(room, { deckRemainingCount: pile.length, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
   });
 });

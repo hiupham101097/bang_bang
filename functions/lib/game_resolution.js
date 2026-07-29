@@ -58,6 +58,7 @@ exports.resolveElimination = (0, firestore_1.onDocumentUpdated)("rooms/{roomId}/
         const privateState = await tx.get(roomRef.collection("privateStates").doc(eliminatedId));
         const deck = await tx.get(roomRef.collection("serverState").doc("deck"));
         const role = privateState.get("role");
+        const eliminatorId = String(eliminated.get("lastDamageBy") ?? "");
         const hand = [...(privateState.get("handCardIds") ?? [])];
         const equipment = [
             eliminated.get("weaponCardId"),
@@ -70,6 +71,47 @@ exports.resolveElimination = (0, firestore_1.onDocumentUpdated)("rooms/{roomId}/
         ].filter(Boolean);
         const players = (await tx.get(roomRef.collection("players"))).docs;
         const states = await Promise.all(players.map((p) => tx.get(roomRef.collection("privateStates").doc(p.id))));
+        const roles = new Map();
+        states.forEach((state, index) => roles.set(players[index].id, state.get("role")));
+        const sheriffPenalty = [];
+        if (role === "deputy" && roles.get(eliminatorId) === "sheriff") {
+            const sheriffIndex = players.findIndex((player) => player.id === eliminatorId);
+            const sheriff = players[sheriffIndex];
+            const sheriffState = states[sheriffIndex];
+            if (sheriff && sheriffState) {
+                const sheriffEquipment = [
+                    sheriff.get("weaponCardId"), sheriff.get("barrelCardId"),
+                    sheriff.get("mustangCardId"), sheriff.get("appaloosaCardId"),
+                    sheriff.get("dynamiteCardId"), sheriff.get("jailCardId"),
+                    ...(sheriff.get("equipmentCardIds") ?? []),
+                ].filter(Boolean);
+                sheriffPenalty.push(...(sheriffState.get("handCardIds") ?? []), ...sheriffEquipment);
+                tx.update(sheriffState.ref, { handCardIds: [] });
+                tx.update(sheriff.ref, {
+                    cardCount: 0,
+                    weaponCardId: admin.firestore.FieldValue.delete(),
+                    barrelCardId: admin.firestore.FieldValue.delete(),
+                    mustangCardId: admin.firestore.FieldValue.delete(),
+                    appaloosaCardId: admin.firestore.FieldValue.delete(),
+                    dynamiteCardId: admin.firestore.FieldValue.delete(),
+                    jailCardId: admin.firestore.FieldValue.delete(),
+                    equipmentCardIds: [],
+                });
+            }
+        }
+        if (role === "outlaw" && eliminatorId) {
+            const killerIndex = players.findIndex((player) => player.id === eliminatorId);
+            const killer = players[killerIndex];
+            const killerState = states[killerIndex];
+            const pile = [...(deck.get("drawPile") ?? [])];
+            if (killer && killerState && killer.get("isAlive") !== false) {
+                const reward = pile.splice(0, 3);
+                const killerHand = [...(killerState.get("handCardIds") ?? []), ...reward];
+                tx.update(killerState.ref, { handCardIds: killerHand });
+                tx.update(killer.ref, { cardCount: killerHand.length });
+                tx.update(deck.ref, { drawPile: pile });
+            }
+        }
         const vulture = players.find((p, i) => p.get("isAlive") !== false &&
             states[i].get("selectedCharacterId") === "vulture_sam");
         if (vulture) {
@@ -86,6 +128,11 @@ exports.resolveElimination = (0, firestore_1.onDocumentUpdated)("rooms/{roomId}/
                     hand.length +
                     equipment.length,
             });
+            if (sheriffPenalty.length > 0) {
+                tx.update(deck.ref, {
+                    discardPile: [...(deck.get("discardPile") ?? []), ...sheriffPenalty],
+                });
+            }
         }
         else
             tx.update(deck.ref, {
@@ -93,6 +140,7 @@ exports.resolveElimination = (0, firestore_1.onDocumentUpdated)("rooms/{roomId}/
                     ...(deck.get("discardPile") ?? []),
                     ...hand,
                     ...equipment,
+                    ...sheriffPenalty,
                 ],
             });
         tx.update(eliminated.ref, {
@@ -109,8 +157,6 @@ exports.resolveElimination = (0, firestore_1.onDocumentUpdated)("rooms/{roomId}/
         });
         tx.update(privateState.ref, { handCardIds: [] });
         const alive = players.filter((p) => p.id !== eliminatedId && p.get("isAlive") !== false);
-        const roles = new Map();
-        states.forEach((s, i) => roles.set(players[i].id, s.get("role")));
         const sheriffAlive = alive.some((p) => roles.get(p.id) === "sheriff");
         const outlaws = alive.filter((p) => roles.get(p.id) === "outlaw");
         const renegades = alive.filter((p) => roles.get(p.id) === "renegade");
@@ -125,6 +171,13 @@ exports.resolveElimination = (0, firestore_1.onDocumentUpdated)("rooms/{roomId}/
         const orderedAlive = [...alive].sort((a, b) => Number(a.get("seat")) - Number(b.get("seat")));
         const nextPlayer = orderedAlive.find((player) => Number(player.get("seat")) > eliminatedSeat) ?? orderedAlive.at(0);
         const eliminatedWasCurrent = room.get("currentTurnPlayerId") === eliminatedId;
+        if (winner) {
+            players.forEach((player) => {
+                tx.update(player.ref, {
+                    revealedRole: roles.get(player.id) ?? "unknown",
+                });
+            });
+        }
         tx.update(roomRef, winner
             ? { status: "finished", phase: "game_over", winner, endedAt: now() }
             : eliminatedWasCurrent && nextPlayer

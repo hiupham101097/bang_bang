@@ -73,7 +73,6 @@ exports.playSpecialCard = (0, https_1.onCall)(async (request) => {
             state.get("status") !== "playing" ||
             state.get("phase") !== "play_phase" ||
             state.get("currentTurnPlayerId") !== uid ||
-            Number(state.get("cardsPlayedThisTurn") ?? 0) >= 1 ||
             !actor.exists ||
             actor.get("isAlive") === false)
             throw new https_1.HttpsError("failed-precondition", "Không thể dùng thẻ lúc này.");
@@ -211,6 +210,7 @@ exports.resolveTurnJudgments = (0, https_1.onCall)(async (request) => {
         if (pile.length === 0)
             throw new https_1.HttpsError("failed-precondition", "Hết bài để phán xét.");
         const players = (await tx.get(room.collection("players"))).docs;
+        const judgmentLogs = [];
         const dynamite = player.get("dynamiteCardId");
         if (dynamite) {
             const judgement = pile.shift();
@@ -226,6 +226,7 @@ exports.resolveTurnJudgments = (0, https_1.onCall)(async (request) => {
                     "eight",
                     "nine",
                 ].includes(rankOf(judgement));
+            judgmentLogs.push(`judgment:${uid}:${judgement}:dynamite:${explodes ? "explode" : "pass"}`);
             if (explodes) {
                 discard.push(dynamite);
                 const health = Number(player.get("health")) - 3;
@@ -240,6 +241,7 @@ exports.resolveTurnJudgments = (0, https_1.onCall)(async (request) => {
                     deckRemainingCount: pile.length,
                     discardCount: discard.length,
                     discardTopCardId: dynamite,
+                    publicLog: [...(state.get("publicLog") ?? []), ...judgmentLogs].slice(-20),
                     updatedAt: serverNow(),
                 });
                 return;
@@ -259,6 +261,7 @@ exports.resolveTurnJudgments = (0, https_1.onCall)(async (request) => {
                 jailCardId: admin.firestore.FieldValue.delete(),
             });
             if (suitOf(judgement) !== "heart") {
+                judgmentLogs.push(`judgment:${uid}:${judgement}:jail:skip`);
                 const next = nextAlive(players, uid);
                 tx.update(deck.ref, { drawPile: pile, discardPile: discard });
                 tx.update(room, {
@@ -268,10 +271,12 @@ exports.resolveTurnJudgments = (0, https_1.onCall)(async (request) => {
                     deckRemainingCount: pile.length,
                     discardCount: discard.length,
                     discardTopCardId: jail,
+                    publicLog: [...(state.get("publicLog") ?? []), ...judgmentLogs].slice(-20),
                     updatedAt: serverNow(),
                 });
                 return;
             }
+            judgmentLogs.push(`judgment:${uid}:${judgement}:jail:release`);
         }
         tx.update(deck.ref, { drawPile: pile, discardPile: discard });
         tx.update(room, {
@@ -279,6 +284,7 @@ exports.resolveTurnJudgments = (0, https_1.onCall)(async (request) => {
             deckRemainingCount: pile.length,
             discardCount: discard.length,
             discardTopCardId: discard.at(-1) ?? null,
+            publicLog: [...(state.get("publicLog") ?? []), ...judgmentLogs].slice(-20),
             updatedAt: serverNow(),
         });
     });
@@ -318,7 +324,6 @@ exports.resolveTargetCard = (0, https_1.onCall)(async (request) => {
         if (!state.exists ||
             state.get("phase") !== "play_phase" ||
             state.get("currentTurnPlayerId") !== uid ||
-            Number(state.get("cardsPlayedThisTurn") ?? 0) >= 1 ||
             !actor.exists ||
             actor.get("isAlive") === false ||
             !target.exists ||
@@ -407,7 +412,6 @@ exports.openGeneralStore = (0, https_1.onCall)(async (request) => {
         if (!state.exists ||
             state.get("phase") !== "play_phase" ||
             state.get("currentTurnPlayerId") !== uid ||
-            Number(state.get("cardsPlayedThisTurn") ?? 0) >= 1 ||
             action.exists)
             throw new https_1.HttpsError("failed-precondition", "Không thể mở General Store.");
         const hand = [...(privateState.get("handCardIds") ?? [])];
@@ -517,7 +521,6 @@ exports.startMultiAttack = (0, https_1.onCall)(async (request) => {
         if (!state.exists ||
             state.get("phase") !== "play_phase" ||
             state.get("currentTurnPlayerId") !== uid ||
-            Number(state.get("cardsPlayedThisTurn") ?? 0) >= 1 ||
             action.exists)
             throw new https_1.HttpsError("failed-precondition", "Không thể dùng thẻ lúc này.");
         const hand = [...(privateState.get("handCardIds") ?? [])];
@@ -540,6 +543,7 @@ exports.startMultiAttack = (0, https_1.onCall)(async (request) => {
             targetOrder: targets,
             targetIndex: 0,
             currentTargetId: targets[0] ?? null,
+            responseDeadlineAt: admin.firestore.Timestamp.fromMillis(Date.now() + 8000),
             status: "waiting",
             createdAt: serverNow(),
         });
@@ -609,7 +613,11 @@ exports.respondMultiAttack = (0, https_1.onCall)(async (request) => {
             });
         }
         else if (next)
-            tx.update(action.ref, { targetIndex: nextIndex, currentTargetId: next });
+            tx.update(action.ref, {
+                targetIndex: nextIndex,
+                currentTargetId: next,
+                responseDeadlineAt: admin.firestore.Timestamp.fromMillis(Date.now() + 8000),
+            });
         else {
             tx.delete(action.ref);
             tx.update(room, {
@@ -644,7 +652,6 @@ exports.startDuel = (0, https_1.onCall)(async (request) => {
         if (!state.exists ||
             state.get("phase") !== "play_phase" ||
             state.get("currentTurnPlayerId") !== uid ||
-            Number(state.get("cardsPlayedThisTurn") ?? 0) >= 1 ||
             !target.exists ||
             target.get("isAlive") === false ||
             action.exists)
@@ -664,6 +671,7 @@ exports.startDuel = (0, https_1.onCall)(async (request) => {
             actorPlayerId: uid,
             opponentPlayerId: targetPlayerId,
             currentResponderId: targetPlayerId,
+            responseDeadlineAt: admin.firestore.Timestamp.fromMillis(Date.now() + 8000),
             status: "waiting",
             createdAt: serverNow(),
         });
@@ -713,7 +721,10 @@ exports.respondDuel = (0, https_1.onCall)(async (request) => {
             tx.update(deck.ref, {
                 discardPile: [...(deck.get("discardPile") ?? []), cardId],
             });
-            tx.update(action.ref, { currentResponderId: other });
+            tx.update(action.ref, {
+                currentResponderId: other,
+                responseDeadlineAt: admin.firestore.Timestamp.fromMillis(Date.now() + 8000),
+            });
             return;
         }
         const health = Number(player.get("health")) - 1;
@@ -1132,6 +1143,7 @@ exports.resolveSlabDodge = (0, https_1.onCall)(async (request) => {
         throw new https_1.HttpsError("invalid-argument", "Cần đúng 2 lá Né.");
     const room = db.doc(`rooms/${roomId}`);
     await db.runTransaction(async (tx) => {
+        const state = await tx.get(room);
         const pending = await tx.get(room.collection("pendingActions").doc(pendingActionId));
         const target = await tx.get(room.collection("players").doc(uid));
         const own = await tx.get(room.collection("privateStates").doc(uid));
@@ -1172,6 +1184,7 @@ exports.acceptBangDamage = (0, https_1.onCall)(async (request) => {
         throw new https_1.HttpsError("invalid-argument", "Thiếu action sát thương.");
     const room = db.doc(`rooms/${roomId}`);
     await db.runTransaction(async (tx) => {
+        const state = await tx.get(room);
         const pending = await tx.get(room.collection("pendingActions").doc(pendingActionId));
         const target = await tx.get(room.collection("players").doc(uid));
         const own = await tx.get(room.collection("privateStates").doc(uid));
@@ -1204,13 +1217,14 @@ exports.acceptBangDamage = (0, https_1.onCall)(async (request) => {
             hand.push(pile.shift());
         const health = Number(target.get("health")) - 1;
         tx.update(own.ref, { handCardIds: hand });
-        tx.update(target.ref, { health, cardCount: hand.length });
+        tx.update(target.ref, { health, cardCount: hand.length, lastDamageBy: actorId });
         tx.update(deck.ref, { drawPile: pile });
         tx.delete(pending.ref);
         tx.update(room, {
             phase: health <= 0 ? "dying" : "play_phase",
             dyingPlayerId: health <= 0 ? uid : admin.firestore.FieldValue.delete(),
             deckRemainingCount: pile.length,
+            publicLog: appendPublicLog(state, `damage:${uid}:bang:${actorId}`),
             updatedAt: serverNow(),
         });
     });
@@ -1272,11 +1286,15 @@ exports.resolveExpiredResponse = (0, https_1.onCall)(async (request) => {
             return;
         }
         const health = Number(target.get("health")) - 1;
-        tx.update(target.ref, { health });
+        tx.update(target.ref, {
+            health,
+            lastDamageBy: String(pending.get("actorPlayerId") ?? ""),
+        });
         tx.delete(pending.ref);
         tx.update(room, {
             phase: health <= 0 ? "dying" : "play_phase",
             dyingPlayerId: health <= 0 ? targetId : admin.firestore.FieldValue.delete(),
+            publicLog: appendPublicLog(state, `damage:${targetId}:bang:${pending.get("actorPlayerId") ?? ""}`),
             updatedAt: serverNow(),
         });
     });

@@ -98,6 +98,7 @@ export const runBotResponse = onDocumentWritten(
           tx.update(action.ref, {
             targetIndex: nextIndex,
             currentTargetId: nextTarget,
+            responseDeadlineAt: admin.firestore.Timestamp.fromMillis(Date.now() + 8000),
           });
         } else {
           tx.delete(action.ref);
@@ -128,7 +129,10 @@ export const runBotResponse = onDocumentWritten(
         tx.update(deck.ref, {
           discardPile: [...(deck.get("discardPile") ?? []), bang],
         });
-        tx.update(action.ref, { currentResponderId: other });
+        tx.update(action.ref, {
+          currentResponderId: other,
+          responseDeadlineAt: admin.firestore.Timestamp.fromMillis(Date.now() + 8000),
+        });
       } else {
         const health = Number(player.get("health") ?? 0) - 1;
         tx.update(player.ref, { health });

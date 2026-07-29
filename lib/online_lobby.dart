@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'audio_service.dart';
 import 'data/online_room_repository.dart';
 import 'domain/online_models.dart';
 import 'game_setup_screen.dart';
@@ -87,6 +88,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
   @override
   void initState() {
     super.initState();
+    GameAudio.instance.startMusic();
     model = LobbyViewModel(widget.repository)..start();
   }
 
@@ -202,11 +204,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
                   ),
                 ),
               const SizedBox(height: 10),
-              Expanded(
-                child: model.loading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _rooms(),
-              ),
+              Expanded(child: _rooms()),
             ],
           ),
         ),
@@ -279,6 +277,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
 
   Widget _rooms() => RoomGrid(
     rooms: model.rooms,
+    loading: model.loading,
     onJoin: (room) async =>
         _open(await model.run(() => widget.repository.joinRoom(room.id))),
     onCreate: _create,
@@ -289,11 +288,13 @@ class RoomGrid extends StatelessWidget {
   const RoomGrid({
     super.key,
     required this.rooms,
+    required this.loading,
     required this.onJoin,
     required this.onCreate,
   });
 
   final List<OnlineRoom> rooms;
+  final bool loading;
   final Future<void> Function(OnlineRoom room) onJoin;
   final Future<void> Function() onCreate;
 
@@ -307,9 +308,11 @@ class RoomGrid extends StatelessWidget {
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
         ),
-        itemCount: rooms.length < 8 ? 8 : rooms.length + 1,
+        itemCount: rooms.length + 1 < 20 ? 20 : rooms.length + 1,
         itemBuilder: (context, index) {
-          if (index >= rooms.length) return _emptyTable();
+          if (index >= rooms.length) {
+            return loading ? _loadingTable(index) : _emptyTable();
+          }
           final room = rooms[index];
           return InkWell(
             borderRadius: BorderRadius.circular(12),
@@ -397,6 +400,27 @@ class RoomGrid extends StatelessWidget {
       ),
     ),
   );
+
+  Widget _loadingTable(int index) => Ink(
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(12),
+      image: const DecorationImage(
+        image: AssetImage('assets/images/room_table.png'),
+        fit: BoxFit.cover,
+        opacity: .45,
+      ),
+      border: Border.all(color: const Color(0xff725037)),
+    ),
+    child: Center(
+      child: Text(
+        'BÀN ${index + 1}',
+        style: const TextStyle(
+          color: Colors.white54,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    ),
+  );
 }
 
 class WaitingRoomScreen extends StatefulWidget {
@@ -445,6 +469,7 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
 
   Future<void> _call(Future<void> Function() action) async {
     try {
+      GameAudio.instance.playSfx('button_tap');
       await action();
     } catch (exception) {
       if (mounted) {
@@ -477,36 +502,101 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
       return OnlineBattleScreen(repository: widget.repository, room: current);
     }
     if (current.phase == 'game_over') {
+      final orderedMembers = [...current.members]
+        ..sort((left, right) => left.seat.compareTo(right.seat));
       return Scaffold(
         backgroundColor: const Color(0xff160c08),
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.emoji_events, size: 72, color: Color(0xffffc451)),
-              SizedBox(height: 16),
-              Text(
-                'TRẬN ĐẤU KẾT THÚC',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
-                  color: Color(0xffffc451),
+        body: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.emoji_events,
+                      size: 72,
+                      color: Color(0xffffc451),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'TRẬN ĐẤU KẾT THÚC',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xffffc451),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      current.winner ?? 'Đang xác định phe thắng',
+                      style: const TextStyle(fontSize: 18),
+                    ),
+                    const SizedBox(height: 20),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'VAI TRÒ CÔNG KHAI',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xffffc451),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ...orderedMembers.map(
+                      (member) => ListTile(
+                        dense: true,
+                        leading: Icon(
+                          member.isAlive
+                              ? Icons.person
+                              : Icons.person_off_outlined,
+                          color: member.isAlive
+                              ? const Color(0xffe7c58a)
+                              : Colors.white38,
+                        ),
+                        title: Text(member.displayName),
+                        trailing: Text(
+                          _roleLabel(member.revealedRole),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: _roleColor(member.revealedRole),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.arrow_back),
+                      label: const Text('VỀ SẢNH'),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(current.winner ?? 'Đang xác định phe thắng'),
-            ],
+            ),
           ),
         ),
       );
     }
-    final isHost = profile != null && current.isHost(profile!.uid);
     final self = profile == null ? null : current.memberFor(profile!.uid);
+    final isHost =
+        self?.isHost == true ||
+        (profile != null && current.isHost(profile!.uid));
     final guestsReady = current.members
         .where((member) => !member.isBot && !member.isHost)
         .every((member) => member.isReady && member.isOnline);
     final canHostStart =
         guestsReady && (current.totalCount >= 4 || current.settings.allowBots);
+    final startHint = !guestsReady
+        ? 'Đang chờ tất cả khách sẵn sàng.'
+        : current.totalCount < 4 && !current.settings.allowBots
+        ? 'Cần đủ 4 người hoặc bật cho phép bot.'
+        : current.totalCount < 4
+        ? 'Bấm BẮT ĐẦU để tự thêm bot còn thiếu.'
+        : 'Tất cả đã sẵn sàng.';
     return Scaffold(
       backgroundColor: const Color(0xff160c08),
       appBar: AppBar(
@@ -559,7 +649,7 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
-                      'Chủ phòng bắt đầu trận; khách cần sẵn sàng. ${error ?? ''}',
+                      'Chủ phòng bấm BẮT ĐẦU; khách chỉ cần SẴN SÀNG. $startHint ${error ?? ''}',
                       style: const TextStyle(
                         fontSize: 11,
                         color: Colors.white70,
@@ -611,18 +701,27 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                         icon: const Icon(Icons.smart_toy_outlined, size: 16),
                         label: const Text('THÊM BOT'),
                       ),
-                      FilledButton.icon(
-                        style: _lobbyButtonStyle,
-                        onPressed: canHostStart
-                            ? () => _startTestGame(current)
-                            : null,
-                        icon: const Icon(Icons.play_arrow, size: 16),
-                        label: const Text('BẮT ĐẦU'),
-                      ),
                     ],
                   ],
                 ),
               ),
+              if (isHost) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: canHostStart
+                        ? () => _startTestGame(current)
+                        : null,
+                    icon: const Icon(Icons.play_arrow),
+                    label: Text(
+                      current.totalCount < 4 && current.settings.allowBots
+                          ? 'BẮT ĐẦU (THÊM BOT TỰ ĐỘNG)'
+                          : 'BẮT ĐẦU VÁN ĐẤU',
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -672,6 +771,22 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
     ),
   );
 }
+
+String _roleLabel(String? role) => switch (role) {
+  'sheriff' => 'CẢNH SÁT TRƯỞNG',
+  'deputy' => 'CẢNH SÁT PHÓ',
+  'outlaw' => 'KẺ CƯỚP',
+  'renegade' => 'KẺ PHẢN BỘI',
+  _ => 'CHƯA CÔNG KHAI',
+};
+
+Color _roleColor(String? role) => switch (role) {
+  'sheriff' => const Color(0xffffc451),
+  'deputy' => const Color(0xff64b5f6),
+  'outlaw' => const Color(0xffef5350),
+  'renegade' => const Color(0xffba68c8),
+  _ => Colors.white54,
+};
 
 class CreateRoomDialog extends StatefulWidget {
   const CreateRoomDialog({super.key});
