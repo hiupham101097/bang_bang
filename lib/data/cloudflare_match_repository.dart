@@ -120,8 +120,17 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
     Map<String, dynamic> payload = const {},
   ]) => _post('/v1/rooms/$roomId', {'action': action, 'payload': payload});
 
+  final Map<String, Stream<OnlineRoom?>> _roomStreams = {};
+
   @override
-  Stream<OnlineRoom?> watchRoom(String roomId) async* {
+  Stream<OnlineRoom?> watchRoom(String roomId) {
+    return _roomStreams.putIfAbsent(
+      roomId,
+      () => _watchRoomSocket(roomId).asBroadcastStream(),
+    );
+  }
+
+  Stream<OnlineRoom?> _watchRoomSocket(String roomId) async* {
     await ensureSignedIn();
     final wsUrl = _uri('/v1/rooms/$roomId/ws').replace(
       scheme: baseUrl.startsWith('https') ? 'wss' : 'ws',
@@ -163,6 +172,10 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
         ? null
         : PrivateSetupState(
             role: mine['role'] as String?,
+            phase: data['phase'] as String? ?? 'lobby',
+            playerId: profile?.uid,
+            roleDeck: _setupChoices(data['roleDeck']),
+            characterDeck: _setupChoices(data['characterDeck']),
             characterOptions: List<String>.from(
               mine['characterOptions'] as List? ?? const [],
             ),
@@ -247,6 +260,22 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
     attackRange: (data['attackRange'] as num?)?.toInt() ?? 1,
   );
 
+  List<SetupChoice> _setupChoices(Object? raw) {
+    if (raw is! List) return const <SetupChoice>[];
+    return raw
+        .whereType<Map>()
+        .map((item) {
+          final data = Map<String, dynamic>.from(item);
+          return SetupChoice(
+            id: data['id'] as String? ?? '',
+            value: data['value'] as String? ?? '',
+            pickedBy: data['pickedBy'] as String?,
+          );
+        })
+        .where((item) => item.id.isNotEmpty && item.value.isNotEmpty)
+        .toList();
+  }
+
   @override
   Stream<List<String>> watchHand(String roomId) async* {
     await for (final room in watchRoom(roomId)) {
@@ -285,6 +314,12 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
       _command(roomId, 'add_bot');
   @override
   Future<void> startGame(String roomId) async => _command(roomId, 'start');
+  @override
+  Future<void> chooseRole(String roomId, String cardId) async =>
+      _command(roomId, 'choose_role', {'cardId': cardId});
+  @override
+  Future<void> takeCharacterCard(String roomId, String cardId) async =>
+      _command(roomId, 'take_character_card', {'cardId': cardId});
   @override
   Future<void> leaveRoom(String roomId) async => _command(roomId, 'leave');
   @override

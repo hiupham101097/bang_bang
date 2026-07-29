@@ -20,6 +20,8 @@ abstract class OnlineRoomRepository {
   Future<void> addBot(String roomId, String difficulty);
   Future<void> removeBot(String roomId, String botId);
   Future<void> startGame(String roomId);
+  Future<void> chooseRole(String roomId, String cardId);
+  Future<void> takeCharacterCard(String roomId, String cardId);
   Future<void> chooseCharacter(
     String roomId,
     String characterId,
@@ -77,6 +79,12 @@ class UnavailableOnlineRoomRepository implements OnlineRoomRepository {
   Future<void> removeBot(String roomId, String botId) async => _unavailable();
   @override
   Future<void> startGame(String roomId) async => _unavailable();
+  @override
+  Future<void> chooseRole(String roomId, String cardId) async =>
+      _unavailable();
+  @override
+  Future<void> takeCharacterCard(String roomId, String cardId) async =>
+      _unavailable();
   @override
   Future<void> chooseCharacter(
     String roomId,

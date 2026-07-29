@@ -39,8 +39,13 @@ flutter:
     - assets/images/role_raider.png
     - assets/images/role_traitor.png
     - assets/images/role_guardian.png
+    - assets/images/doctor_lee.png
+    - assets/images/iron_rose.png
+    - assets/images/lucky_joe.png
+    - assets/images/quick_jack.png
     - assets/images/health_bullet.png
     - assets/images/cards/
+    - assets/images/characters/
     - assets/images/effects/
     - assets/images/role_cards/
     - assets/audio/western_theme.wav

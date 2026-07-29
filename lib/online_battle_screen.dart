@@ -2257,20 +2257,26 @@ class _PlayerTable extends StatelessWidget {
   final DateTime? turnDeadlineAt;
   final Map<String, dynamic>? pendingAction;
 
+  static const _seatAnchors = <Alignment>[
+    Alignment.topCenter,
+    Alignment.topRight,
+    Alignment.centerRight,
+    Alignment.bottomRight,
+    Alignment.bottomCenter,
+    Alignment.bottomLeft,
+    Alignment.centerLeft,
+    Alignment.topLeft,
+  ];
+
   @override
   Widget build(BuildContext context) => SizedBox(
-    height: 186,
+    height: 224,
     child: LayoutBuilder(
       builder: (context, constraints) {
-        final seatWidth = (constraints.maxWidth / 4.25).clamp(92.0, 138.0);
-        final seatHeight = 60.0;
-        final centerX = constraints.maxWidth / 2;
-        final centerY = 93.0;
-        final radiusX = math.max(
-          0.0,
-          constraints.maxWidth / 2 - seatWidth / 2 - 5,
-        );
-        const radiusY = 58.0;
+        final seatWidth = (constraints.maxWidth / 5.3).clamp(58.0, 78.0);
+        final seatHeight = seatWidth;
+        final tableHeight = constraints.maxHeight;
+        final players = members.take(8).toList(growable: false);
         final bang = _bangEvent(latestPublicLog);
         final pendingBang = pendingAction?['actionType'] == 'bang';
         final pendingActorId = pendingAction == null
@@ -2286,17 +2292,17 @@ class _PlayerTable extends StatelessWidget {
           clipBehavior: Clip.none,
           children: [
             Positioned(
-              left: constraints.maxWidth * .18,
-              right: constraints.maxWidth * .18,
-              top: 42,
-              bottom: 32,
+              left: seatWidth * .68,
+              right: seatWidth * .68,
+              top: seatHeight * .62,
+              bottom: seatHeight * .62,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: const Color(0xff3a1e10),
+                  color: const Color(0xcc315f2e),
                   shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xff85552d), width: 2),
+                  border: Border.all(color: const Color(0x99d8e6a3), width: 2),
                   boxShadow: const [
-                    BoxShadow(color: Color(0xaa080402), blurRadius: 12),
+                    BoxShadow(color: Color(0xaa071d08), blurRadius: 18),
                   ],
                 ),
                 child: const Center(
@@ -2311,16 +2317,17 @@ class _PlayerTable extends StatelessWidget {
                 ),
               ),
             ),
-            for (var index = 0; index < members.length; index++)
+            for (var index = 0; index < players.length; index++)
               () {
-                final angle =
-                    -math.pi / 2 + (2 * math.pi * index / members.length);
-                final x = centerX + math.cos(angle) * radiusX - seatWidth / 2;
-                final y = centerY + math.sin(angle) * radiusY - seatHeight / 2;
-                final member = members[index];
+                final anchor = _seatAnchors[index].alongSize(
+                  Size(constraints.maxWidth, tableHeight),
+                );
+                final x = anchor.dx - seatWidth / 2;
+                final y = anchor.dy - seatHeight / 2;
+                final member = players[index];
                 return Positioned(
                   left: x.clamp(0.0, constraints.maxWidth - seatWidth),
-                  top: y.clamp(0.0, 186 - seatHeight),
+                  top: y.clamp(0.0, tableHeight - seatHeight),
                   width: seatWidth,
                   height: seatHeight,
                   child: _PlayerSeat(
@@ -2417,9 +2424,29 @@ class _PlayerSeatState extends State<_PlayerSeat> {
     return Stack(
       clipBehavior: Clip.none,
       children: [
+        for (var i = 0; i < math.min(member.cardCount, 4); i++)
+          Positioned(
+            left: 10.0 + i * 8,
+            bottom: -2,
+            child: Transform.rotate(
+              angle: -.24 + i * .14,
+              child: Container(
+                width: 24,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: const Color(0xffc39055),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: const Color(0xff3b1f10)),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x77000000), blurRadius: 4),
+                  ],
+                ),
+              ),
+            ),
+          ),
         AnimatedContainer(
           duration: const Duration(milliseconds: 250),
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          padding: const EdgeInsets.all(5),
           decoration: BoxDecoration(
             color: member.isAlive
                 ? active
@@ -2430,7 +2457,7 @@ class _PlayerSeatState extends State<_PlayerSeat> {
                         )
                       : const Color(0xff2a1811)
                 : const Color(0xff16100d),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(999),
             border: Border.all(
               color: active ? const Color(0xffffc451) : const Color(0xff63432e),
               width: active ? 2 : 1,
@@ -2439,16 +2466,27 @@ class _PlayerSeatState extends State<_PlayerSeat> {
                 ? const [BoxShadow(color: Color(0x99ffb12e), blurRadius: 10)]
                 : null,
           ),
-          child: Row(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                member.isBot ? Icons.smart_toy : Icons.person,
-                size: 18,
-                color: member.isAlive
-                    ? const Color(0xffffd272)
-                    : Colors.white38,
+              ClipOval(
+                child: Image.asset(
+                  _seatAvatarAsset(member),
+                  width: 34,
+                  height: 34,
+                  fit: BoxFit.cover,
+                  color: member.isAlive ? null : Colors.black54,
+                  colorBlendMode: member.isAlive ? null : BlendMode.darken,
+                  errorBuilder: (context, error, stackTrace) => Icon(
+                    member.isBot ? Icons.smart_toy : Icons.person,
+                    size: 24,
+                    color: member.isAlive
+                        ? const Color(0xffffd272)
+                        : Colors.white38,
+                  ),
+                ),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(height: 2),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2530,6 +2568,26 @@ class _BangEvent {
   final String id;
   final String shooterId;
   final String targetId;
+}
+
+String _seatAvatarAsset(RoomMember member) {
+  return switch (member.characterId) {
+    'doctor_lee' => 'assets/images/doctor_lee.png',
+    'iron_rose' || 'rose_doolan' || 'rose_oolan' =>
+      'assets/images/iron_rose.png',
+    'lucky_joe' || 'lucky_duke' => 'assets/images/lucky_joe.png',
+    'quick_jack' || 'black_jack' => 'assets/images/quick_jack.png',
+    _ => switch (member.revealedRole) {
+      'sheriff' => 'assets/images/role_sheriff.png',
+      'deputy' => 'assets/images/role_deputy.png',
+      'guardian' => 'assets/images/role_guardian.png',
+      'raider' => 'assets/images/role_raider.png',
+      'traitor' => 'assets/images/role_traitor.png',
+      _ => member.isBot
+          ? 'assets/images/role_raider.png'
+          : 'assets/images/role_deputy.png',
+    },
+  };
 }
 
 _BangEvent? _bangEvent(String? log) {

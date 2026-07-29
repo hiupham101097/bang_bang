@@ -212,15 +212,37 @@ class PrivateSetupState {
   const PrivateSetupState({
     required this.role,
     required this.characterOptions,
+    this.phase = 'lobby',
+    this.playerId,
+    this.roleDeck = const [],
+    this.characterDeck = const [],
     this.selectedCharacterId,
     this.selectionDeadlineAt,
     this.submitted = false,
   });
   final String? role;
   final List<String> characterOptions;
+  final String phase;
+  final String? playerId;
+  final List<SetupChoice> roleDeck;
+  final List<SetupChoice> characterDeck;
   final String? selectedCharacterId;
   final DateTime? selectionDeadlineAt;
   final bool submitted;
+}
+
+class SetupChoice {
+  const SetupChoice({
+    required this.id,
+    required this.value,
+    this.pickedBy,
+  });
+
+  final String id;
+  final String value;
+  final String? pickedBy;
+
+  bool get isPicked => pickedBy != null;
 }
 
 class LobbyStats {
