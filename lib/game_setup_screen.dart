@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -21,6 +22,7 @@ class GameSetupScreen extends StatefulWidget {
 
 class _GameSetupScreenState extends State<GameSetupScreen> {
   late final Timer _ticker;
+  String? _inspectedCharacterId;
 
   @override
   void initState() {
@@ -45,195 +47,326 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
         builder: (context, snapshot) {
           final state = snapshot.data;
           final phase = state?.phase ?? widget.room.phase;
-          final choosingRole = phase == 'role_selection';
-          final choosingCharacter =
+          final isRoleStep = phase == 'role_selection';
+          final isCharacterStep =
               phase == 'character_selection' || phase == 'choosing_character';
+          final selectedCharacter = _selectedCharacterForCenter(state);
+
           return LayoutBuilder(
-            builder: (context, constraints) => SingleChildScrollView(
-              padding: const EdgeInsets.all(12),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight: constraints.maxHeight - 24,
-                ),
+            builder: (context, constraints) {
+              final compact = constraints.maxHeight < 620;
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text(
-                      'KHỞI TẠO TRẬN ĐẤU',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                        color: Color(0xffffc451),
+                    _SetupHeader(
+                      phase: phase,
+                      deadline: state?.selectionDeadlineAt,
+                      members: widget.room.members,
+                    ),
+                    SizedBox(height: compact ? 4 : 8),
+                    Expanded(
+                      child: _SetupCenterStage(
+                        phase: phase,
+                        role: state?.role,
+                        selectedCharacterId: selectedCharacter,
+                        canConfirmCharacter:
+                            selectedCharacter != null &&
+                            state != null &&
+                            !state.submitted &&
+                            state.characterOptions.contains(selectedCharacter),
+                        onConfirmCharacter: selectedCharacter == null
+                            ? null
+                            : () => widget.repository.chooseCharacter(
+                                widget.room.id,
+                                selectedCharacter,
+                                '${DateTime.now().microsecondsSinceEpoch}_$selectedCharacter',
+                              ),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(_phaseLabel(phase)),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      alignment: WrapAlignment.center,
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: widget.room.members
-                          .map(
-                            (member) => Chip(
-                              visualDensity: VisualDensity.compact,
-                              avatar: Icon(
-                                member.isBot ? Icons.smart_toy : Icons.person,
-                                size: 15,
-                              ),
-                              label: Text(
-                                member.displayName,
-                                style: const TextStyle(fontSize: 10),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                    const SizedBox(height: 10),
-                    if (state != null)
-                      _RoleDeckPreview(
-                        cards: state.roleDeck,
-                        playerCount: widget.room.members.length,
-                        playerId: state.playerId,
-                        enabled: choosingRole && state.role == null,
-                        onPick: (cardId) => widget.repository.chooseRole(
-                          widget.room.id,
-                          cardId,
-                        ),
-                      ),
-                    if (state?.role != null) ...[
-                      const SizedBox(height: 10),
-                      _RoleCard(role: state!.role!),
-                    ],
-                    if (choosingRole || choosingCharacter) ...[
-                      const SizedBox(height: 10),
-                      _SelectionDeadline(deadline: state?.selectionDeadlineAt),
-                    ],
-                    if (choosingRole && state?.role == null)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 8),
-                        child: Text('CHON 1 LA VAI TRO'),
-                      )
-                    else if (choosingCharacter &&
-                        state != null &&
-                        state.characterOptions.length < 2) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'CHON 2 LA NHAN VAT (${state.characterOptions.length}/2)',
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        alignment: WrapAlignment.center,
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: state.characterDeck
-                            .map(
-                              (card) => _SetupCharacterCard(
-                                card: card,
-                                selected: state.characterOptions.contains(card.value),
-                                enabled: !card.isPicked,
-                                onTap: () => widget.repository
-                                    .takeCharacterCard(widget.room.id, card.id),
+                    SizedBox(height: compact ? 4 : 8),
+                    SizedBox(
+                      height: compact ? 150 : 184,
+                      child: state == null
+                          ? const Center(child: CircularProgressIndicator())
+                          : isRoleStep
+                          ? _RoleDeck(
+                              cards: state.roleDeck,
+                              playerCount: widget.room.members.length,
+                              playerId: state.playerId,
+                              canPick: state.role == null,
+                              onPick: (cardId) => widget.repository.chooseRole(
+                                widget.room.id,
+                                cardId,
                               ),
                             )
-                            .toList(),
-                      ),
-                    ] else if (choosingCharacter &&
-                        state != null &&
-                        !state.submitted) ...[
-                      const SizedBox(height: 8),
-                      const Text(
-                        'CHON 1 TRONG 2 LA DE NHAN CHUC NANG',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        alignment: WrapAlignment.center,
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: state.characterOptions
-                            .map(
-                              (id) => _CharacterChoice(
-                                id: id,
-                                onTap: () => widget.repository.chooseCharacter(
-                                  widget.room.id,
-                                  id,
-                                  '${DateTime.now().microsecondsSinceEpoch}_$id',
+                          : isCharacterStep &&
+                                state.characterOptions.length < 2
+                          ? _CharacterDeck(
+                              cards: state.characterDeck,
+                              selectedValues: state.characterOptions.toSet(),
+                              onPick: (cardId) => widget.repository
+                                  .takeCharacterCard(widget.room.id, cardId),
+                            )
+                          : isCharacterStep && !state.submitted
+                          ? _FinalCharacterChoices(
+                              ids: state.characterOptions,
+                              inspectedId: selectedCharacter,
+                              onInspect: (id) =>
+                                  setState(() => _inspectedCharacterId = id),
+                            )
+                          : const Center(
+                              child: Text(
+                                'Dang cho nhung nguoi choi khac...',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
-                            )
-                            .toList(),
-                      ),
-                    ] else if (choosingCharacter)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 12),
-                        child: Text('Da chon. Dang cho nhung nguoi choi khac...'),
-                      ),
+                            ),
+                    ),
                   ],
                 ),
-              ),
-            ),
+              );
+            },
           );
         },
       ),
     ),
   );
+
+  String? _selectedCharacterForCenter(PrivateSetupState? state) {
+    if (state == null || state.characterOptions.isEmpty) return null;
+    if (state.characterOptions.length < 2) return null;
+    if (_inspectedCharacterId != null &&
+        state.characterOptions.contains(_inspectedCharacterId)) {
+      return _inspectedCharacterId;
+    }
+    return null;
+  }
 }
 
-class _SelectionDeadline extends StatelessWidget {
-  const _SelectionDeadline({required this.deadline});
+class _SetupHeader extends StatelessWidget {
+  const _SetupHeader({
+    required this.phase,
+    required this.deadline,
+    required this.members,
+  });
+
+  final String phase;
   final DateTime? deadline;
+  final List<RoomMember> members;
 
   @override
   Widget build(BuildContext context) {
     final seconds = deadline?.difference(DateTime.now()).inSeconds.clamp(0, 60);
     final urgent = seconds != null && seconds <= 10;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: (urgent ? Colors.redAccent : const Color(0xffffc451)).withValues(
-          alpha: .16,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: urgent ? Colors.redAccent : const Color(0xffffc451),
-        ),
-      ),
-      child: Text(
-        seconds == null
-            ? 'ĐANG ĐỒNG BỘ THẺ...'
-            : 'CÒN ${seconds}s ĐỂ CHỌN · HẾT GIỜ TỰ CHỌN',
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w900,
-          color: urgent ? Colors.redAccent : const Color(0xffffd272),
-        ),
+    return SizedBox(
+      height: 58,
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _phaseTitle(phase),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xffffc451),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: urgent
+                      ? const Color(0xff5a1913)
+                      : const Color(0xff2c1a0f),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: urgent ? Colors.redAccent : const Color(0xffffc451),
+                  ),
+                ),
+                child: Text(
+                  seconds == null ? '--' : '${seconds}s',
+                  style: TextStyle(
+                    color: urgent ? Colors.redAccent : const Color(0xffffd272),
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          SizedBox(
+            height: 25,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: members
+                    .map(
+                      (member) => Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        child: Chip(
+                          visualDensity: VisualDensity.compact,
+                          labelPadding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                          ),
+                          avatar: Icon(
+                            member.isBot ? Icons.smart_toy : Icons.person,
+                            size: 13,
+                          ),
+                          label: Text(
+                            member.displayName,
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _RoleDeckPreview extends StatelessWidget {
-  const _RoleDeckPreview({
+class _SetupCenterStage extends StatelessWidget {
+  const _SetupCenterStage({
+    required this.phase,
+    required this.role,
+    required this.selectedCharacterId,
+    required this.canConfirmCharacter,
+    required this.onConfirmCharacter,
+  });
+
+  final String phase;
+  final String? role;
+  final String? selectedCharacterId;
+  final bool canConfirmCharacter;
+  final VoidCallback? onConfirmCharacter;
+
+  @override
+  Widget build(BuildContext context) {
+    if (phase == 'role_selection') {
+      return _CenterRoleReveal(role: role);
+    }
+    if (phase == 'character_selection' || phase == 'choosing_character') {
+      return _CenterCharacterReveal(
+        id: selectedCharacterId,
+        canConfirm: canConfirmCharacter,
+        onConfirm: onConfirmCharacter,
+      );
+    }
+    return const Center(
+      child: Text(
+        'Dang dong bo tran dau...',
+        style: TextStyle(color: Colors.white70),
+      ),
+    );
+  }
+}
+
+class _CenterRoleReveal extends StatelessWidget {
+  const _CenterRoleReveal({required this.role});
+  final String? role;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: role == null
+        ? const _CardBack(width: 118, height: 164, label: 'CHON 1 LA')
+        : _FramedImageCard(
+            asset: _roleCardAsset(role!),
+            width: 126,
+            height: 176,
+            footer: _roleLabel(role!),
+          ),
+  );
+}
+
+class _CenterCharacterReveal extends StatelessWidget {
+  const _CenterCharacterReveal({
+    required this.id,
+    required this.canConfirm,
+    required this.onConfirm,
+  });
+
+  final String? id;
+  final bool canConfirm;
+  final VoidCallback? onConfirm;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: id == null
+        ? const _CardBack(width: 118, height: 164, label: 'NHAN XEM')
+        : Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _FramedImageCard(
+                asset: _characterAsset(id!),
+                width: 126,
+                height: 176,
+                footer: _characterName(id!),
+              ),
+              const SizedBox(width: 12),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 170),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _characterName(id!),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xffffd272),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _characterHint(id!),
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    FilledButton(
+                      onPressed: canConfirm ? onConfirm : null,
+                      child: const Text('CHON'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+  );
+}
+
+class _RoleDeck extends StatelessWidget {
+  const _RoleDeck({
     required this.cards,
     required this.playerCount,
     required this.playerId,
-    required this.enabled,
+    required this.canPick,
     required this.onPick,
   });
 
   final List<SetupChoice> cards;
   final int playerCount;
   final String? playerId;
-  final bool enabled;
+  final bool canPick;
   final ValueChanged<String> onPick;
 
   @override
@@ -242,80 +375,172 @@ class _RoleDeckPreview extends StatelessWidget {
         ? _setupRoleDeck(playerCount)
               .asMap()
               .entries
-              .map((entry) => SetupChoice(
-                    id: 'preview_${entry.key}',
-                    value: entry.value,
-                  ))
+              .map(
+                (entry) => SetupChoice(
+                  id: 'preview_${entry.key}',
+                  value: entry.value,
+                ),
+              )
               .toList()
         : cards;
-    return Wrap(
-      alignment: WrapAlignment.center,
-      spacing: 6,
-      runSpacing: 6,
-      children: visibleCards
-          .map(
-            (card) {
-              final selected = playerId != null && card.pickedBy == playerId;
-              final canPick = enabled && !card.isPicked;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardWidth = (constraints.maxWidth / visibleCards.length - 6)
+            .clamp(34.0, 54.0);
+        final cardHeight = cardWidth * 1.4;
+        return Center(
+          child: Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 5,
+            runSpacing: 5,
+            children: visibleCards.map((card) {
+              final mine = playerId != null && card.pickedBy == playerId;
+              final enabled = canPick && !card.isPicked;
               return Opacity(
-                opacity: !card.isPicked || selected ? 1 : .38,
+                opacity: !card.isPicked || mine ? 1 : .34,
                 child: InkWell(
-                  onTap: canPick ? () => onPick(card.id) : null,
-                  borderRadius: BorderRadius.circular(6),
-                  child: Container(
-                    width: 42,
-                    height: 58,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: selected
-                            ? const Color(0xffffc451)
-                            : const Color(0xff6e492a),
-                        width: selected ? 2 : 1,
-                      ),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Image.asset(_roleAsset(card.value), fit: BoxFit.cover),
+                  onTap: enabled ? () => onPick(card.id) : null,
+                  borderRadius: BorderRadius.circular(5),
+                  child: _CardBack(
+                    width: cardWidth,
+                    height: cardHeight,
+                    label: '',
+                    highlighted: mine,
                   ),
                 ),
               );
-            },
-          )
-          .toList(),
+            }).toList(),
+          ),
+        );
+      },
     );
   }
 }
-class _RoleCard extends StatelessWidget {
-  const _RoleCard({required this.role});
-  final String role;
+
+class _CharacterDeck extends StatelessWidget {
+  const _CharacterDeck({
+    required this.cards,
+    required this.selectedValues,
+    required this.onPick,
+  });
+
+  final List<SetupChoice> cards;
+  final Set<String> selectedValues;
+  final ValueChanged<String> onPick;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final columns = cards.length > 12 ? 8 : math.min(cards.length, 6);
+      final cardWidth = (constraints.maxWidth / math.max(1, columns) - 6)
+          .clamp(32.0, 52.0);
+      final cardHeight = cardWidth * 1.4;
+      return Center(
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 5,
+          runSpacing: 5,
+          children: cards.map((card) {
+            final selected = selectedValues.contains(card.value);
+            final enabled = !card.isPicked;
+            return Opacity(
+              opacity: enabled || selected ? 1 : .32,
+              child: InkWell(
+                onTap: enabled ? () => onPick(card.id) : null,
+                borderRadius: BorderRadius.circular(5),
+                child: _CardBack(
+                  width: cardWidth,
+                  height: cardHeight,
+                  label: '',
+                  highlighted: selected,
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      );
+    },
+  );
+}
+
+class _FinalCharacterChoices extends StatelessWidget {
+  const _FinalCharacterChoices({
+    required this.ids,
+    required this.inspectedId,
+    required this.onInspect,
+  });
+
+  final List<String> ids;
+  final String? inspectedId;
+  final ValueChanged<String> onInspect;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: ids.map((id) {
+      final selected = id == inspectedId;
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 5),
+        child: InkWell(
+          onTap: () => onInspect(id),
+          borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 76,
+          height: 106,
+          padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: const Color(0xfff4dfac),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: selected
+                    ? const Color(0xffffc451)
+                    : const Color(0xff7a430e),
+                width: selected ? 3 : 1,
+              ),
+            ),
+            child: Image.asset(_characterAsset(id), fit: BoxFit.contain),
+          ),
+        ),
+      );
+    }).toList(),
+  );
+}
+
+class _FramedImageCard extends StatelessWidget {
+  const _FramedImageCard({
+    required this.asset,
+    required this.width,
+    required this.height,
+    required this.footer,
+  });
+
+  final String asset;
+  final double width;
+  final double height;
+  final String footer;
 
   @override
   Widget build(BuildContext context) => Container(
-    width: 190,
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    width: width,
+    height: height,
+    padding: const EdgeInsets.all(6),
     decoration: BoxDecoration(
       color: const Color(0xfff4dfac),
-      border: Border.all(color: const Color(0xffffc451), width: 2),
       borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: const Color(0xffffc451), width: 2),
+      boxShadow: const [BoxShadow(color: Color(0xaa000000), blurRadius: 10)],
     ),
     child: Column(
       children: [
-        Image.asset(_roleAsset(role), height: 86, fit: BoxFit.contain),
+        Expanded(child: Image.asset(asset, fit: BoxFit.contain)),
         const SizedBox(height: 4),
-        const Text(
-          'VAI TRÒ CỦA BẠN',
-          style: TextStyle(
-            color: Color(0xff4d2410),
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 3),
         Text(
-          _roleLabel(role),
-          textAlign: TextAlign.center,
+          footer,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
-            color: Color(0xff2b160b),
-            fontSize: 17,
+            color: Color(0xff30170a),
+            fontSize: 11,
             fontWeight: FontWeight.w900,
           ),
         ),
@@ -324,134 +549,57 @@ class _RoleCard extends StatelessWidget {
   );
 }
 
-class _SetupCharacterCard extends StatelessWidget {
-  const _SetupCharacterCard({
-    required this.card,
-    required this.selected,
-    required this.enabled,
-    required this.onTap,
+class _CardBack extends StatelessWidget {
+  const _CardBack({
+    required this.width,
+    required this.height,
+    required this.label,
+    this.highlighted = false,
   });
 
-  final SetupChoice card;
-  final bool selected;
-  final bool enabled;
-  final VoidCallback onTap;
+  final double width;
+  final double height;
+  final String label;
+  final bool highlighted;
 
   @override
-  Widget build(BuildContext context) => Opacity(
-    opacity: enabled || selected ? 1 : .35,
-    child: InkWell(
-      onTap: enabled ? onTap : null,
-      borderRadius: BorderRadius.circular(10),
-      child: Ink(
-        width: 94,
-        height: 132,
-        padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          color: const Color(0xfff4dfac),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: selected ? const Color(0xffffc451) : const Color(0xff7a430e),
-            width: selected ? 3 : 1,
+  Widget build(BuildContext context) => Container(
+    width: width,
+    height: height,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: const Color(0xff3a2115),
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(
+        color: highlighted ? const Color(0xffffc451) : const Color(0xffb5823b),
+        width: highlighted ? 3 : 2,
+      ),
+      image: const DecorationImage(
+        image: AssetImage('assets/images/bang_bang_logo.png'),
+        fit: BoxFit.contain,
+        opacity: .34,
+      ),
+    ),
+    child: label.isEmpty
+        ? null
+        : Text(
+            label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xffffd272),
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
           ),
-        ),
-        child: Column(
-          children: [
-            Expanded(
-              child: Image.asset(
-                _characterAsset(card.value),
-                fit: BoxFit.contain,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              _characterName(card.value),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xff30170a),
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
   );
 }
 
-class _CharacterChoice extends StatelessWidget {
-  const _CharacterChoice({required this.id, required this.onTap});
-  final String id;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Material(
-    color: Colors.transparent,
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Ink(
-        width: 136,
-        height: 184,
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: const Color(0xfff4dfac),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xffffc451), width: 2),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Center(
-                child: Image.asset(_characterAsset(id), fit: BoxFit.contain),
-              ),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              _characterName(id),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xff30170a),
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            Text(
-              _characterHint(id),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Color(0xff59331a), fontSize: 10),
-            ),
-            const SizedBox(height: 4),
-            const Align(
-              alignment: Alignment.centerRight,
-              child: Text(
-                'CHỌN',
-                style: TextStyle(
-                  color: Color(0xff7a430e),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-String _phaseLabel(String phase) => switch (phase) {
-  'role_selection' => 'Moi nguoi chon 1 la vai tro trong 60s.',
-  'character_selection' => 'Moi nguoi chon 2 la nhan vat, roi giu lai 1.',
-  'choosing_character' => 'Mỗi người nhận 2 thẻ nhân vật.',
-  'turn_start' => 'Sẵn sàng vào bàn đấu.',
-  _ => 'Đang xác nhận người chơi...',
+String _phaseTitle(String phase) => switch (phase) {
+  'role_selection' => 'Chon vai tro',
+  'character_selection' => 'Chon nhan vat',
+  'choosing_character' => 'Chon nhan vat',
+  'turn_start' => 'San sang vao van',
+  _ => 'Khoi tao tran dau',
 };
 
 List<String> _setupRoleDeck(int playerCount) {
@@ -482,13 +630,13 @@ List<String> _setupRoleDeck(int playerCount) {
   return [...base, 'guardian'].take(playerCount + 1).toList();
 }
 
-String _roleAsset(String role) => switch (role) {
-  'sheriff' => 'assets/images/role_sheriff.png',
-  'deputy' => 'assets/images/role_deputy.png',
-  'guardian' => 'assets/images/role_guardian.png',
-  'outlaw' || 'raider' => 'assets/images/role_raider.png',
-  'renegade' || 'traitor' => 'assets/images/role_traitor.png',
-  _ => 'assets/images/role_deputy.png',
+String _roleCardAsset(String role) => switch (role) {
+  'sheriff' => 'assets/images/role_cards/sheriff_card.png',
+  'deputy' => 'assets/images/role_cards/deputy_card.png',
+  'guardian' => 'assets/images/role_cards/guardian_card.png',
+  'outlaw' || 'raider' => 'assets/images/role_cards/raider_card.png',
+  'renegade' || 'traitor' => 'assets/images/role_cards/traitor_card.png',
+  _ => 'assets/images/role_cards/deputy_card.png',
 };
 
 String _characterAsset(String id) => switch (id) {
@@ -500,11 +648,12 @@ String _characterAsset(String id) => switch (id) {
 };
 
 String _roleLabel(String role) => switch (role) {
-  'sheriff' => 'CẢNH SÁT TRƯỞNG',
-  'deputy' => 'CẢNH SÁT PHÓ',
-  'outlaw' => 'KẺ CƯỚP',
-  'renegade' => 'KẺ PHẢN BỘI',
-  _ => 'VAI TRÒ BÍ MẬT',
+  'sheriff' => 'Sheriff',
+  'deputy' => 'Deputy',
+  'guardian' => 'Guardian',
+  'outlaw' || 'raider' => 'Raider',
+  'renegade' || 'traitor' => 'Traitor',
+  _ => 'Role',
 };
 
 String _characterName(String id) => id
@@ -513,10 +662,15 @@ String _characterName(String id) => id
     .join(' ');
 
 String _characterHint(String id) => switch (id) {
-  'willy_the_kid' => 'Có thể dùng nhiều BANG trong lượt.',
-  'slab_the_killer' => 'BANG cần 2 lá Né để tránh.',
-  'lucky_duke' => 'Rút 2 lá khi phán xét, chọn 1.',
-  'calamity_janet' => 'Đổi BANG và Né cho nhau.',
-  'vulture_sam' => 'Nhận bài của người bị loại.',
-  _ => 'Chọn nhân vật để xem kỹ năng trong trận.',
+  'willy_the_kid' => 'Co the dung nhieu BANG trong mot luot.',
+  'slab_the_killer' => 'BANG cua ban can 2 la Ne de tranh.',
+  'lucky_duke' || 'lucky_joe' => 'Rut 2 la khi phan xet, chon 1.',
+  'calamity_janet' => 'Co the dung BANG va Ne thay the nhau.',
+  'vulture_sam' => 'Nhan bai cua nguoi vua bi loai.',
+  'kit_carlson' => 'Xem 3 la dau bo bai, lay 2 va tra 1.',
+  'black_jack' || 'quick_jack' => 'Neu la thu hai do, rut them 1 la.',
+  'sid_ketchum' => 'Bo 2 la de hoi 1 mau.',
+  'rose_doolan' || 'rose_oolan' || 'iron_rose' => 'Tam ban cua ban xa hon 1.',
+  'paul_regret' => 'Nguoi khac nhin ban xa hon 1.',
+  _ => 'Nhan vat co ky nang rieng trong van dau.',
 };

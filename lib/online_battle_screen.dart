@@ -2270,10 +2270,10 @@ class _PlayerTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-    height: 224,
+    height: 184,
     child: LayoutBuilder(
       builder: (context, constraints) {
-        final seatWidth = (constraints.maxWidth / 5.3).clamp(58.0, 78.0);
+        final seatWidth = (constraints.maxWidth / 6.1).clamp(48.0, 66.0);
         final seatHeight = seatWidth;
         final tableHeight = constraints.maxHeight;
         final players = members.take(8).toList(growable: false);
