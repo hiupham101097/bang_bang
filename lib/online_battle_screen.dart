@@ -935,7 +935,8 @@ class OnlineBattleScreen extends StatelessWidget {
       return Scaffold(
         backgroundColor: const Color(0xff160c08),
         appBar: AppBar(
-          toolbarHeight: 42,
+          toolbarHeight: 38,
+          titleSpacing: 8,
           title: const Text('BANG BANG — Bàn đấu'),
           actions: [
             if (room.settings.voiceEnabled && GameVoiceChat.isAvailable)
@@ -979,7 +980,32 @@ class OnlineBattleScreen extends StatelessWidget {
             ),
           ],
         ),
-        body: SafeArea(
+        bottomNavigationBar: _BattleHandDock(
+          repository: repository,
+          room: room,
+          isMyTurn: isMyTurn,
+          canPlay: canPlay,
+          activePlayer: activePlayer,
+          onPlay: (cardId) => _playCard(context, cardId, playerId),
+        ),
+        body: Stack(
+          children: [
+            const Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  image: DecorationImage(
+                    image: AssetImage('assets/images/wild_west_town.png'),
+                    fit: BoxFit.cover,
+                    opacity: .48,
+                  ),
+                ),
+              ),
+            ),
+            const Positioned.fill(
+              child: ColoredBox(color: Color(0xa9160c08)),
+            ),
+            SafeArea(
+              top: false,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
             child: ListView(

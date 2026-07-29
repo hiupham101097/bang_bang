@@ -65,7 +65,7 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
       ).join();
       await preferences.setString('bangbang_fallback_player_id', uid);
     }
-    final resolvedUid = uid!;
+    final resolvedUid = uid;
     return PlayerProfile(
       uid: resolvedUid,
       displayName: 'Cao bồi ${resolvedUid.substring(0, 5)}',
@@ -167,6 +167,11 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
               mine['characterOptions'] as List? ?? const [],
             ),
             selectedCharacterId: mine['characterId'] as String?,
+            selectionDeadlineAt: data['characterSelectionDeadline'] is num
+                ? DateTime.fromMillisecondsSinceEpoch(
+                    (data['characterSelectionDeadline'] as num).toInt(),
+                  )
+                : null,
             submitted: mine['characterChosen'] == true,
           );
     final pending = data['pendingBang'];

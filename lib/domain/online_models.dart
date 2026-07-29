@@ -213,11 +213,13 @@ class PrivateSetupState {
     required this.role,
     required this.characterOptions,
     this.selectedCharacterId,
+    this.selectionDeadlineAt,
     this.submitted = false,
   });
   final String? role;
   final List<String> characterOptions;
   final String? selectedCharacterId;
+  final DateTime? selectionDeadlineAt;
   final bool submitted;
 }
 

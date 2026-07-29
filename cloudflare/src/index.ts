@@ -43,6 +43,7 @@ interface MatchState {
   status: "waiting" | "starting" | "playing" | "finished"; phase: Phase; players: Player[];
   deck: string[]; discard: string[]; currentTurnPlayerId?: string; turnNumber: number;
   turnDeadline?: number;
+  characterSelectionDeadline?: number;
   bangUsedThisTurn: number; publicLog: string[]; pendingBang?: PendingBang; winner?: string;
 }
 
@@ -181,7 +182,17 @@ export class BangBangMatch extends DurableObject<Env> {
 
   async alarm(): Promise<void> {
     const state = await this.load();
-    if (state.phase === "waiting_response" && state.pendingBang && Date.now() >= state.pendingBang.deadline) {
+    if (state.status === "starting" && state.phase === "choosing_character" && state.characterSelectionDeadline && Date.now() >= state.characterSelectionDeadline) {
+      for (const player of state.players) {
+        if (!player.characterChosen && player.characterOptions?.length) {
+          player.characterId = player.characterOptions[crypto.getRandomValues(new Uint32Array(1))[0] % player.characterOptions.length];
+          player.characterChosen = true;
+        }
+      }
+      state.publicLog.push("Hết giờ chọn nhân vật: hệ thống đã chọn ngẫu nhiên.");
+      this.finalizeCharacters(state);
+      await this.save(state);
+    } else if (state.phase === "waiting_response" && state.pendingBang && Date.now() >= state.pendingBang.deadline) {
       const pending = state.pendingBang;
       if (pending.actionType === "general_store") {
         const card = pending.openedCardIds?.[0];
@@ -273,7 +284,9 @@ export class BangBangMatch extends DurableObject<Env> {
       player.hand = []; player.cardCount = 0; player.equipment = []; player.attackRange = 1;
     });
     state.status = "starting"; state.phase = "choosing_character";
+    state.characterSelectionDeadline = Date.now() + 60000;
     state.publicLog.push("Mọi người đang chọn nhân vật.");
+    void this.ctx.storage.setAlarm(state.characterSelectionDeadline);
     this.finalizeCharacters(state);
   }
   private chooseCharacter(state: MatchState, userId: string, characterId: string): void {
@@ -285,6 +298,7 @@ export class BangBangMatch extends DurableObject<Env> {
   }
   private finalizeCharacters(state: MatchState): void {
     if (state.players.some((player) => !player.characterChosen || !player.characterId)) return;
+    state.characterSelectionDeadline = undefined;
     const cards = shuffle(deck()); let cursor = 0;
     for (const player of state.players) {
       player.maxHealth = characterHealth[player.characterId!] + (player.role === "sheriff" ? 1 : 0);

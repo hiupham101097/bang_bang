@@ -156,16 +156,34 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
       context: context,
       builder: (_) => const CreateRoomDialog(),
     );
-    if (settings != null) {
-      final room = await model.run(
-        () => widget.repository.createRoom(settings),
+    if (settings == null || !mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _CreatingRoomDialog(),
+    );
+    OnlineRoom? room;
+    try {
+      room = await model.run(
+        () => widget.repository
+            .createRoom(settings)
+            .timeout(const Duration(seconds: 12)),
       );
-      if (room == null) return;
-      for (var index = 0; index < settings.initialBotCount; index++) {
-        await model.run(() => widget.repository.addBot(room.id, 'normal'));
+      if (room != null) {
+        for (var index = 0; index < settings.initialBotCount; index++) {
+          await model.run(
+            () => widget.repository
+                .addBot(room!.id, 'normal')
+                .timeout(const Duration(seconds: 8)),
+          );
+        }
       }
-      await _open(room);
+    } finally {
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
     }
+    if (mounted && room != null) await _open(room);
   }
 
   void _snack(String text) =>
@@ -177,9 +195,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
     appBar: AppBar(
       toolbarHeight: 30,
       title: const Text('PHÒNG ĐẤU'),
-      actions: [
-        _appBarControls(),
-      ],
+      actions: [_appBarControls()],
     ),
     body: SafeArea(
       top: false,
@@ -257,6 +273,40 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
     onJoin: (room) async =>
         _open(await model.run(() => widget.repository.joinRoom(room.id))),
     onCreate: _create,
+  );
+}
+
+class _CreatingRoomDialog extends StatelessWidget {
+  const _CreatingRoomDialog();
+
+  @override
+  Widget build(BuildContext context) => Dialog(
+    insetPadding: const EdgeInsets.all(24),
+    child: SizedBox(
+      width: 230,
+      height: 76,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 18),
+        child: Row(
+          children: const [
+            SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                'ĐANG TẠO BÀN...',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
   );
 }
 
@@ -443,17 +493,23 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
   }
 
   Future<void> _load() async {
-    profile = await widget.repository.ensureSignedIn();
-    subscription = widget.repository
-        .watchRoom(widget.roomId)
-        .listen(
-          (value) {
-            if (mounted) setState(() => room = value);
-          },
-          onError: (Object value) {
-            if (mounted) setState(() => error = '$value');
-          },
-        );
+    await subscription?.cancel();
+    subscription = null;
+    try {
+      profile = await widget.repository.ensureSignedIn();
+      subscription = widget.repository
+          .watchRoom(widget.roomId)
+          .listen(
+            (value) {
+              if (mounted) setState(() => room = value);
+            },
+            onError: (Object value) {
+              if (mounted) setState(() => error = '$value');
+            },
+          );
+    } catch (exception) {
+      if (mounted) setState(() => error = '$exception');
+    }
   }
 
   @override
@@ -487,7 +543,56 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
   Widget build(BuildContext context) {
     final current = room;
     if (current == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      if (error == null) {
+        return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      }
+      return Scaffold(
+        backgroundColor: const Color(0xff160c08),
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 340),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.cloud_off_outlined,
+                    color: Colors.redAccent,
+                    size: 42,
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'KHÔNG TẢI ĐƯỢC PHÒNG',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    error!,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70, fontSize: 11),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: () {
+                      setState(() => error = null);
+                      _load();
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('THỬ LẠI'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('VỀ SẢNH'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
     }
     if (current.status == RoomStatus.starting ||
         current.phase == 'choosing_character') {
