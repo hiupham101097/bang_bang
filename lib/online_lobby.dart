@@ -61,7 +61,10 @@ class LobbyViewModel extends ChangeNotifier {
   }
 
   void _report(Object exception) {
-    error = exception.toString();
+    final raw = exception.toString();
+    error = raw.length > 180
+        ? 'Không thể tải dữ liệu online. Kiểm tra kết nối rồi thử lại.'
+        : raw;
     loading = false;
     notifyListeners();
   }
@@ -211,6 +214,9 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(
                     model.error!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
                     style: const TextStyle(color: Colors.redAccent),
                   ),
                 ),

@@ -47,9 +47,10 @@ class FirebasePlayerProfileStore {
     }
 
     final reference = _database.ref('users/${user.uid}');
-    final snapshot = await reference.get();
-    if (!snapshot.exists) {
-      final defaultName = 'Cao bồi ${user.uid.substring(0, 5)}';
+    final defaultName = 'Cao bồi ${user.uid.substring(0, 5)}';
+    try {
+      final snapshot = await reference.get();
+      if (snapshot.exists) return _accountFromSnapshot(user.uid, snapshot);
       // Only write paths that the client owns. Wallet and titles begin empty
       // and are later granted by the server-side reward path.
       await reference.child('profile').set({
@@ -58,15 +59,18 @@ class FirebasePlayerProfileStore {
         'createdAt': ServerValue.timestamp,
         'updatedAt': ServerValue.timestamp,
       });
-      return FirebasePlayerAccount(
-        uid: user.uid,
-        displayName: defaultName,
-        avatarAsset: FirebasePlayerAccount.defaultAvatarAsset,
-        coins: 0,
-        titles: const {},
-      );
+    } on FirebaseException catch (error) {
+      // Keep the match playable until the owner deploys the database rules.
+      // Firebase Auth still provides the stable player UID.
+      if (error.code != 'permission-denied') rethrow;
     }
-    return _accountFromSnapshot(user.uid, snapshot);
+    return FirebasePlayerAccount(
+      uid: user.uid,
+      displayName: defaultName,
+      avatarAsset: FirebasePlayerAccount.defaultAvatarAsset,
+      coins: 0,
+      titles: const {},
+    );
   }
 
   Stream<FirebasePlayerAccount> watchAccount() async* {

@@ -931,7 +931,6 @@ class OnlineBattleScreen extends StatelessWidget {
       // The authoritative Worker resolves Dynamite/Jail during the draw
       // command. Do not keep the old Firebase-only gate here, otherwise the
       // player can be stuck at TURN_START forever.
-      const canResolveJudgment = false;
       final canDraw = isMyTurn && phase == 'turn_start';
       return Scaffold(
         backgroundColor: const Color(0xff160c08),
@@ -1692,11 +1691,6 @@ class OnlineBattleScreen extends StatelessWidget {
                   },
                 ),
                 const SizedBox(height: 16),
-                if (canResolveJudgment)
-                  FilledButton(
-                    onPressed: () => _call(context, 'resolveTurnJudgments'),
-                    child: const Text('PHÁN XÉT ĐẦU LƯỢT'),
-                  ),
                 if (canDraw)
                   FilledButton(
                     onPressed: () =>
