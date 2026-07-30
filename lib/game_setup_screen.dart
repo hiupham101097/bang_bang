@@ -25,19 +25,13 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
   String? _inspectedCharacterId;
   String? _pendingRoleCardId;
   String? _pendingCharacterCardId;
-  String _finalCharacterKey = '';
-  int _finalCharacterRemainingSeconds = 0;
 
   @override
   void initState() {
     super.initState();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) {
-        setState(() {
-          if (_finalCharacterRemainingSeconds > 0) {
-            _finalCharacterRemainingSeconds--;
-          }
-        });
+        setState(() {});
       }
     });
   }
@@ -65,13 +59,10 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
           final finalCharacterIds = state?.characterOptions.length == 2
               ? state!.characterOptions
               : const <String>[];
-          final finalKey = finalCharacterIds.join('|');
-          if (state != null && finalKey != _finalCharacterKey) {
-            _finalCharacterKey = finalKey;
-            _finalCharacterRemainingSeconds = finalKey.isEmpty ? 0 : 10;
+          final isRoleReveal = phase == 'role_reveal';
+          if (state != null && finalCharacterIds.isEmpty) {
             _inspectedCharacterId = null;
           }
-          final canLockCharacter = _finalCharacterRemainingSeconds <= 0;
           final hasPickedRole =
               state?.roleDeck.any((card) => card.pickedBy == state.playerId) ??
               false;
@@ -82,6 +73,7 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
               state.characterOptions.length < 2;
           final showCenterStage =
               state == null ||
+              isRoleReveal ||
               (!isPickingRole && !isPickingCharacter) ||
               phase == 'choosing_character';
 
@@ -126,12 +118,9 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
                               selectedCharacterId: selectedCharacter,
                               submitted: state.submitted,
                               finalCharacterIds: finalCharacterIds,
-                              revealDelaySeconds: finalCharacterIds.isEmpty
-                                  ? 0
-                                  : _finalCharacterRemainingSeconds,
+                              revealDelaySeconds: 0,
                               canConfirmCharacter:
                                   selectedCharacter != null &&
-                                  canLockCharacter &&
                                   !state.submitted &&
                                   state.characterOptions.contains(
                                     selectedCharacter,
@@ -433,7 +422,7 @@ class _SetupCenterStage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (phase == 'role_selection') {
+    if (phase == 'role_selection' || phase == 'role_reveal') {
       return _CenterRoleReveal(role: role);
     }
     if (phase == 'character_selection' || phase == 'choosing_character') {
@@ -937,6 +926,7 @@ class _CardBack extends StatelessWidget {
 
 String _phaseTitle(String phase) => switch (phase) {
   'role_selection' => 'Chon vai tro',
+  'role_reveal' => 'Vai tro cua ban',
   'character_selection' => 'Chon nhan vat',
   'choosing_character' => 'Chon nhan vat',
   'turn_start' => 'San sang vao van',

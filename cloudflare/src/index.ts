@@ -7,7 +7,7 @@ export interface Env {
 }
 
 type Role = "sheriff" | "deputy" | "outlaw" | "renegade";
-type Phase = "lobby" | "role_selection" | "character_selection" | "choosing_character" | "turn_start" | "play_phase" | "waiting_response" | "discard_phase" | "game_over";
+type Phase = "lobby" | "role_selection" | "role_reveal" | "character_selection" | "choosing_character" | "turn_start" | "play_phase" | "waiting_response" | "discard_phase" | "game_over";
 type Command =
   | "join"
   | "leave"
@@ -195,6 +195,9 @@ export class BangBangMatch extends DurableObject<Env> {
     const state = await this.load();
     if (state.status === "starting" && state.phase === "role_selection" && state.characterSelectionDeadline && Date.now() >= state.characterSelectionDeadline) {
       this.fillMissingRoles(state);
+      await this.startRoleReveal(state);
+      await this.save(state);
+    } else if (state.status === "starting" && state.phase === "role_reveal" && state.characterSelectionDeadline && Date.now() >= state.characterSelectionDeadline) {
       await this.startCharacterSelection(state);
       await this.save(state);
     } else if (state.status === "starting" && (state.phase === "character_selection" || state.phase === "choosing_character") && state.characterSelectionDeadline && Date.now() >= state.characterSelectionDeadline) {
@@ -301,7 +304,7 @@ export class BangBangMatch extends DurableObject<Env> {
     state.publicLog.push("Moi nguoi dang chon vai tro.");
     for (const bot of state.players.filter((player) => player.bot)) this.pickRandomRole(state, bot);
     void this.ctx.storage.setAlarm(state.characterSelectionDeadline);
-    if (state.players.every((player) => state.roleDeck?.some((card) => card.pickedBy === player.id))) await this.startCharacterSelection(state);
+    if (state.players.every((player) => state.roleDeck?.some((card) => card.pickedBy === player.id))) await this.startRoleReveal(state);
   }
   private async chooseRole(state: MatchState, userId: string, cardId: string): Promise<void> {
     if (state.status !== "starting" || state.phase !== "role_selection") throw Error("Khong o giai doan chon vai tro.");
@@ -311,7 +314,7 @@ export class BangBangMatch extends DurableObject<Env> {
     if (!card) throw Error("La vai tro khong hop le.");
     card.pickedBy = userId;
     player.role = card.value as Role;
-    if (state.players.every((item) => state.roleDeck?.some((card) => card.pickedBy === item.id))) await this.startCharacterSelection(state);
+    if (state.players.every((item) => state.roleDeck?.some((card) => card.pickedBy === item.id))) await this.startRoleReveal(state);
   }
   private pickRandomRole(state: MatchState, player: Player): void {
     if (state.roleDeck?.some((card) => card.pickedBy === player.id)) return;
@@ -322,6 +325,15 @@ export class BangBangMatch extends DurableObject<Env> {
   }
   private fillMissingRoles(state: MatchState): void {
     for (const player of state.players.filter((item) => !state.roleDeck?.some((card) => card.pickedBy === item.id))) this.pickRandomRole(state, player);
+  }
+  private async startRoleReveal(state: MatchState): Promise<void> {
+    this.normalizeRoles(state);
+    state.phase = "role_reveal";
+    // This is intentionally server-authoritative so every device sees its
+    // private role before the character deck becomes selectable.
+    state.characterSelectionDeadline = Date.now() + 10_000;
+    state.publicLog.push("Vai tro da duoc lat. Chuan bi chon nhan vat sau 10 giay.");
+    void this.ctx.storage.setAlarm(state.characterSelectionDeadline);
   }
   private normalizeRoles(state: MatchState): void {
     const required = roles(state.players.length);
