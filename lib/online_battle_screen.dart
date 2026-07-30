@@ -2081,6 +2081,27 @@ class _PlayerSeatState extends State<_PlayerSeat> {
           clipBehavior: Clip.none,
           alignment: Alignment.center,
           children: [
+            if (sheriff)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: const Color(0xffffd44d),
+                        width: 2,
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0xb3ffb52b),
+                          blurRadius: 10,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             for (var i = 0; i < math.min(member.cardCount, 4); i++)
               Positioned(
                 left: constraints.maxWidth * .18 + i * 6,
@@ -2149,20 +2170,21 @@ class _PlayerSeatState extends State<_PlayerSeat> {
             ),
             if (sheriff)
               Positioned(
-                right: constraints.maxWidth * .15,
-                top: constraints.maxHeight * .08,
-                child: Container(
-                  width: 18,
-                  height: 18,
-                  decoration: BoxDecoration(
-                    color: const Color(0xffffd44d),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0xff5a3116)),
-                  ),
+                right: -2,
+                top: -5,
+                child: Tooltip(
+                  message: 'CẢNH SÁT TRƯỞNG',
                   child: const Icon(
-                    Icons.star,
-                    size: 13,
-                    color: Color(0xff3a2115),
+                    Icons.workspace_premium,
+                    size: 24,
+                    color: Color(0xffffd44d),
+                    shadows: [
+                      Shadow(
+                        color: Color(0xdd241207),
+                        blurRadius: 3,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
                   ),
                 ),
               ),
