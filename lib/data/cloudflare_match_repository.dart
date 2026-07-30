@@ -224,10 +224,12 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
       ),
       status: status,
       phase: data['phase'] as String? ?? 'lobby',
-      sheriffPlayerId: rawPlayers
-          .where((player) => player['revealedRole'] == 'sheriff')
-          .map((player) => player['id'] as String)
-          .firstOrNull,
+      sheriffPlayerId:
+          data['sheriffPlayerId'] as String? ??
+          rawPlayers
+              .where((player) => player['revealedRole'] == 'sheriff')
+              .map((player) => player['id'] as String)
+              .firstOrNull,
       winner: data['winner'] as String?,
       currentTurnPlayerId: data['currentTurnPlayerId'] as String?,
       turnDeadlineAt: data['turnDeadline'] is num

@@ -1685,6 +1685,7 @@ class _CentralActionArea extends StatelessWidget {
             child: _PlayerTable(
               members: room.members,
               currentTurnPlayerId: room.currentTurnPlayerId,
+              sheriffPlayerId: room.sheriffPlayerId,
               latestPublicLog: room.publicLog.isEmpty
                   ? null
                   : room.publicLog.last,
@@ -1898,6 +1899,7 @@ class _PlayerTable extends StatelessWidget {
   const _PlayerTable({
     required this.members,
     required this.currentTurnPlayerId,
+    required this.sheriffPlayerId,
     required this.latestPublicLog,
     required this.turnDeadlineAt,
     this.pendingAction,
@@ -1905,6 +1907,7 @@ class _PlayerTable extends StatelessWidget {
 
   final List<RoomMember> members;
   final String? currentTurnPlayerId;
+  final String? sheriffPlayerId;
   final String? latestPublicLog;
   final DateTime? turnDeadlineAt;
   final Map<String, dynamic>? pendingAction;
@@ -1985,6 +1988,7 @@ class _PlayerTable extends StatelessWidget {
                 child: _PlayerSeat(
                   member: member,
                   isCurrent: member.id == currentTurnPlayerId,
+                  isSheriff: member.id == sheriffPlayerId,
                   isBangShooter: pendingBang
                       ? member.id == pendingActorId
                       : member.id == bang?.shooterId,
@@ -2006,6 +2010,7 @@ class _PlayerSeat extends StatefulWidget {
   const _PlayerSeat({
     required this.member,
     required this.isCurrent,
+    required this.isSheriff,
     required this.isBangShooter,
     required this.isBangTarget,
     required this.turnDeadlineAt,
@@ -2014,6 +2019,7 @@ class _PlayerSeat extends StatefulWidget {
 
   final RoomMember member;
   final bool isCurrent;
+  final bool isSheriff;
   final bool isBangShooter;
   final bool isBangTarget;
   final DateTime? turnDeadlineAt;
@@ -2072,7 +2078,7 @@ class _PlayerSeatState extends State<_PlayerSeat> {
   Widget build(BuildContext context) {
     final member = widget.member;
     final active = widget.isCurrent;
-    final sheriff = member.revealedRole == 'sheriff';
+    final sheriff = widget.isSheriff || member.revealedRole == 'sheriff';
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = math.min(constraints.maxWidth, constraints.maxHeight);

@@ -874,7 +874,26 @@ export class BangBangMatch extends DurableObject<Env> {
       pickedBy: card.pickedBy,
     }));
   }
-  private snapshot(state: MatchState, userId: string) { const me = state.players.find((player) => player.id === userId); return { ...state, deck: undefined, roleDeck: this.setupDeckFor(state.roleDeck, userId), characterDeck: this.setupDeckFor(state.characterDeck, userId), players: state.players.map(({ hand, role, characterOptions, characterChosen, ...player }) => ({ ...player, revealedRole: role === "sheriff" ? role : undefined, role: player.id === userId ? role : undefined, hand: player.id === userId ? hand : undefined, characterOptions: player.id === userId ? characterOptions : undefined, characterChosen: player.id === userId ? characterChosen : undefined })), hand: me?.hand ?? [] }; }
+  private snapshot(state: MatchState, userId: string) {
+    const me = state.players.find((player) => player.id === userId);
+    const sheriffPlayerId = state.players.find((player) => player.role === "sheriff")?.id;
+    return {
+      ...state,
+      deck: undefined,
+      sheriffPlayerId,
+      roleDeck: this.setupDeckFor(state.roleDeck, userId),
+      characterDeck: this.setupDeckFor(state.characterDeck, userId),
+      players: state.players.map(({ hand, role, characterOptions, characterChosen, ...player }) => ({
+        ...player,
+        revealedRole: role === "sheriff" ? role : undefined,
+        role: player.id === userId ? role : undefined,
+        hand: player.id === userId ? hand : undefined,
+        characterOptions: player.id === userId ? characterOptions : undefined,
+        characterChosen: player.id === userId ? characterChosen : undefined,
+      })),
+      hand: me?.hand ?? [],
+    };
+  }
 }
 
 async function sign(user: User, secret: string): Promise<string> { const payload = textToBase64(JSON.stringify({ ...user, exp: Date.now() + 1000 * 60 * 60 * 24 * 30 })); return `${payload}.${await signatureFor(payload, secret)}`; }
