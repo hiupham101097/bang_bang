@@ -1109,14 +1109,14 @@ class OnlineBattleScreen extends StatelessWidget {
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   image: DecorationImage(
-                    image: AssetImage('assets/images/room_table.png'),
+                    image: AssetImage('assets/images/wild_west_town.png'),
                     fit: BoxFit.cover,
-                    opacity: .76,
+                    opacity: .92,
                   ),
                 ),
               ),
             ),
-            const Positioned.fill(child: ColoredBox(color: Color(0xa9160c08))),
+            const Positioned.fill(child: ColoredBox(color: Color(0x42160c08))),
             Positioned(
               left: 4,
               top: 4,
