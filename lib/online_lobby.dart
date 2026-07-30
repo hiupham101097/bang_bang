@@ -636,13 +636,11 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
       );
     }
     if (current.status == RoomStatus.playing) {
-      return _RoomReadyGate(
-        handStream: widget.repository.watchHand(current.id),
-        title: 'DANG VAO VAN DAU',
-        detail: 'Dang nhan 7 la bai va dong bo ban choi...',
-        builder: (context) =>
-            OnlineBattleScreen(repository: widget.repository, room: current),
-      );
+      // Do not gate the table behind a second WebSocket subscription. The
+      // current room snapshot is already authoritative and contains the
+      // private hand when available. Rendering immediately prevents a black
+      // or endless loading screen if that secondary stream reconnects late.
+      return OnlineBattleScreen(repository: widget.repository, room: current);
     }
     if (current.phase == 'game_over') {
       final orderedMembers = [...current.members]
@@ -937,14 +935,12 @@ class _RoomReadyGate extends StatelessWidget {
     required this.detail,
     required this.builder,
     this.setupStream,
-    this.handStream,
   });
 
   final String title;
   final String detail;
   final WidgetBuilder builder;
   final Stream<PrivateSetupState?>? setupStream;
-  final Stream<List<String>>? handStream;
 
   @override
   Widget build(BuildContext context) {
@@ -956,17 +952,6 @@ class _RoomReadyGate extends StatelessWidget {
           if (snapshot.hasData && snapshot.data != null) {
             return builder(context);
           }
-          return _RoomBootScreen(title: title, detail: detail);
-        },
-      );
-    }
-
-    final hand = handStream;
-    if (hand != null) {
-      return StreamBuilder<List<String>>(
-        stream: hand,
-        builder: (context, snapshot) {
-          if (snapshot.hasData) return builder(context);
           return _RoomBootScreen(title: title, detail: detail);
         },
       );
