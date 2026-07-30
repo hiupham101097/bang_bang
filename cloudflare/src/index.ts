@@ -64,7 +64,10 @@ const shuffle = <T>(values: T[]) => {
   }
   return copy;
 };
-const typeOf = (card: string) => card.split("_")[0] === "gun" ? card.split("_").slice(0, 3).join("_") : card.split("_")[0];
+const typeOf = (card?: string) => {
+  const parts = (card ?? "").split("_");
+  return parts[0] === "gun" ? parts.slice(0, 3).join("_") : parts[0];
+};
 const deck = () => {
   const types = [
     ...Array(12).fill("bang"), ...Array(8).fill("dodge"), ...Array(5).fill("beer"),
@@ -78,8 +81,8 @@ const deck = () => {
   let index = 0;
   return suits.flatMap((suit) => ranks.map((rank) => `${types[index++]}_${rank}_${suit}`));
 };
-const rankValue = (card: string) => {
-  const rank = card.split("_").at(-2) ?? "";
+const rankValue = (card?: string) => {
+  const rank = (card ?? "").split("_").at(-2) ?? "";
   return ["two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "jack", "queen", "king", "ace"].indexOf(rank) + 2;
 };
 const roles = (count: number): Role[] => {
@@ -413,21 +416,35 @@ export class BangBangMatch extends DurableObject<Env> {
     if (state.status !== "starting" || (state.phase !== "character_selection" && state.phase !== "choosing_character")) throw Error("Khong o giai doan chon nhan vat.");
     const player = this.player(state, userId);
     if ((player.characterOptions?.length ?? 0) < 2) throw Error("Can chon du 2 la nhan vat truoc.");
-    if (player.characterChosen || !player.characterOptions?.includes(characterId)) throw Error("Nhân vật không hợp lệ.");
+    if (!player.characterOptions?.includes(characterId)) throw Error("Nhân vật không hợp lệ.");
+    // A previous request can have selected the card in memory just before an
+    // unexpected failure during game setup. Retrying the same choice must be
+    // safe and should finish setup instead of trapping the room.
+    if (player.characterChosen) {
+      if (player.characterId !== characterId) throw Error("Bạn đã chọn nhân vật khác.");
+      await this.finalizeCharacters(state);
+      return;
+    }
     player.characterId = characterId; player.characterChosen = true;
     await this.finalizeCharacters(state);
   }
   private async finalizeCharacters(state: MatchState): Promise<void> {
     if (state.players.some((player) => !player.characterChosen || !player.characterId)) return;
     state.characterSelectionDeadline = undefined;
-    const cards = shuffle(deck()); let cursor = 0;
+    const cards = shuffle(deck());
     for (const player of state.players) {
       player.maxHealth = characterHealth[player.characterId!] + (player.role === "sheriff" ? 1 : 0);
-      player.health = player.maxHealth; player.hand = cards.slice(cursor, cursor += 7);
+      // BANG starts each player with as many cards as their maximum health.
+      // A fixed 7-card hand exhausts a 52-card deck in an eight-player room
+      // before the opening high-card draw can happen.
+      player.health = player.maxHealth;
+      player.hand = cards.splice(0, player.maxHealth);
       player.cardCount = player.hand.length; player.alive = true; player.equipment = []; player.attackRange = 1;
     }
-    state.deck = cards.slice(cursor);
-    const openerDraws = state.players.map((player) => ({ player, card: state.deck.shift()! }));
+    state.deck = cards;
+    const openerDraws = state.players
+      .map((player) => ({ player, card: state.deck.shift() }))
+      .filter((draw): draw is { player: Player; card: string } => Boolean(draw.card));
     openerDraws.sort((left, right) => rankValue(right.card) - rankValue(left.card));
     state.discard = openerDraws.map((draw) => draw.card);
     state.status = "playing"; state.phase = "turn_start";
