@@ -69,7 +69,7 @@ const typeOf = (card?: string) => {
   return parts[0] === "gun" ? parts.slice(0, 3).join("_") : parts[0];
 };
 const deck = () => {
-  const types = [
+  const baseTypes = [
     ...Array(12).fill("bang"), ...Array(8).fill("dodge"), ...Array(5).fill("beer"),
     ...Array(3).fill("panico"), ...Array(3).fill("cat_balou"), ...Array(2).fill("dilizenza"),
     "wells_fargo", ...Array(2).fill("general_store"), ...Array(2).fill("duello"), "gatling",
@@ -78,8 +78,16 @@ const deck = () => {
   ];
   const ranks = ["ace", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "jack", "queen", "king"];
   const suits = ["spade", "club", "diamond", "heart"];
-  let index = 0;
-  return suits.flatMap((suit) => ranks.map((rank) => `${types[index++]}_${rank}_${suit}`));
+  // A long 8-player game needs a draw pile after the initial deal. Keep the
+  // same card artwork/types but create 100 distinct physical cards. The copy
+  // marker stays before rank/suit so judgment rules and UI rank parsing work.
+  const types = [...baseTypes, ...baseTypes.slice(0, 48)];
+  return types.map((type, index) => {
+    const baseIndex = index % 52;
+    const copy = Math.floor(index / 52) + 1;
+    const marker = copy === 1 ? "" : `_copy${copy}`;
+    return `${type}${marker}_${ranks[baseIndex % ranks.length]}_${suits[Math.floor(baseIndex / ranks.length)]}`;
+  });
 };
 const rankValue = (card?: string) => {
   const rank = (card ?? "").split("_").at(-2) ?? "";

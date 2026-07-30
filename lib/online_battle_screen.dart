@@ -2262,7 +2262,7 @@ String _seatAvatarAsset(RoomMember member) {
     'iron_rose' ||
     'rose_doolan' ||
     'rose_oolan' => 'assets/images/iron_rose.png',
-    'lucky_joe' || 'lucky_duke' => 'assets/images/lucky_joe.png',
+    'lucky_duke' => 'assets/images/characters/lucky_duke.png',
     'quick_jack' || 'black_jack' => 'assets/images/quick_jack.png',
     _ => switch (member.revealedRole) {
       'sheriff' => 'assets/images/role_sheriff.png',
@@ -2415,7 +2415,10 @@ GameCard _publicGameCard(String cardId) {
     (value) => value.name == parts.last,
     orElse: () => CardSuit.spade,
   );
-  final type = rankIndex < 0 ? parts.first : parts.take(rankIndex).join('_');
+  final rawType = rankIndex < 0 ? parts.first : parts.take(rankIndex).join('_');
+  // The online 100-card deck adds a physical-copy marker before rank/suit.
+  // It identifies duplicate cards without changing the artwork type.
+  final type = rawType.replaceFirst(RegExp(r'_copy\d+$'), '');
   const assets = <String, String>{
     'bang': 'bang.png',
     'dodge': 'ne.png',
@@ -2461,7 +2464,8 @@ String _phaseLabel(String phase) => switch (phase) {
 
 String _cardLabel(String cardId) => cardId
     .split('_')
-    .takeWhile((part) => part != 'ace' && part != 'two' && part != 'three')
+    .takeWhile((part) => !CardRank.values.any((rank) => rank.name == part))
+    .where((part) => !RegExp(r'^copy\d+$').hasMatch(part))
     .join(' ')
     .replaceAll('DILIZENZA', 'DILIGENZA')
     .toUpperCase();

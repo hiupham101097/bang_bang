@@ -974,7 +974,7 @@ String _roleCardAsset(String role) => switch (role) {
 String _characterAsset(String id) => switch (id) {
   'doctor_lee' => 'assets/images/doctor_lee.png',
   'iron_rose' || 'rose_doolan' || 'rose_oolan' => 'assets/images/iron_rose.png',
-  'lucky_joe' || 'lucky_duke' => 'assets/images/lucky_joe.png',
+  'lucky_duke' => 'assets/images/characters/lucky_duke.png',
   'quick_jack' || 'black_jack' => 'assets/images/quick_jack.png',
   _ => 'assets/images/characters/$id.png',
 };
