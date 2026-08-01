@@ -49,6 +49,8 @@ interface MatchState {
   characterSelectionDeadline?: number;
   roleDeck?: SetupCard[]; characterDeck?: SetupCard[];
   bangUsedThisTurn: number; publicLog: string[]; pendingBang?: PendingBang; winner?: string;
+  turnOrder?: string[]; currentPlayerIndex?: number; roundNumber?: number;
+  processedRequestIds?: string[];
 }
 
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), {
@@ -256,6 +258,8 @@ export class BangBangMatch extends DurableObject<Env> {
   private async apply(user: User, command: { action: Command; payload?: Record<string, unknown> }): Promise<MatchState> {
     const state = await this.load();
     const payload = command.payload ?? {};
+    const requestKey = payload.requestId ? `${user.id}:${String(payload.requestId)}` : "";
+    if (requestKey && state.processedRequestIds?.includes(requestKey)) return state;
     if (command.action === "join") {
       if (state.status !== "waiting" || state.players.length >= state.maxPlayers) throw Error("Phòng đã đầy hoặc đã bắt đầu.");
       if (!state.players.some((player) => player.id === user.id)) state.players.push({ id: user.id, name: user.name, seat: state.players.length, bot: false, ready: false, alive: true, health: 0, maxHealth: 0, cardCount: 0, hand: [], equipment: [], attackRange: 1 });
@@ -297,6 +301,7 @@ export class BangBangMatch extends DurableObject<Env> {
       else if (command.action === "discard") await this.discardCards(state, user.id, Array.isArray(payload.cardIds) ? payload.cardIds.map(String) : []);
     }
     for (const candidate of state.players) this.maybeSuzy(state, candidate);
+    if (requestKey) state.processedRequestIds = [...(state.processedRequestIds ?? []), requestKey].slice(-200);
     await this.save(state);
     return state;
   }
@@ -454,15 +459,15 @@ export class BangBangMatch extends DurableObject<Env> {
       player.cardCount = player.hand.length; player.alive = true; player.equipment = []; player.attackRange = 1;
     }
     state.deck = cards;
-    const openerDraws = state.players
-      .map((player) => ({ player, card: state.deck.shift() }))
-      .filter((draw): draw is { player: Player; card: string } => Boolean(draw.card));
-    openerDraws.sort((left, right) => rankValue(right.card) - rankValue(left.card));
-    state.discard = openerDraws.map((draw) => draw.card);
+    state.discard = [];
     state.status = "playing"; state.phase = "turn_start";
-    state.currentTurnPlayerId = openerDraws[0]?.player.id ?? state.players.find((player) => player.role === "sheriff")!.id;
+    state.turnOrder = state.players.slice().sort((a, b) => a.seat - b.seat).map((player) => player.id);
+    const sheriff = state.players.find((player) => player.role === "sheriff")!;
+    state.currentPlayerIndex = state.turnOrder.indexOf(sheriff.id);
+    state.currentTurnPlayerId = sheriff.id;
+    state.roundNumber = 1;
     state.turnNumber = 1; state.bangUsedThisTurn = 0; state.publicLog.push("Trận đấu bắt đầu.");
-    state.publicLog.push(`${openerDraws[0]?.player.name ?? "Nguoi choi"} boc la cao nhat (${openerDraws[0]?.card ?? ""}).`);
+    state.publicLog.push("Sheriff di luot dau tien.");
     state.turnDeadline = Date.now() + state.turnDurationSeconds * 1000;
     void this.ctx.storage.setAlarm(state.turnDeadline);
     await this.runBotTurn(state);
@@ -658,7 +663,12 @@ export class BangBangMatch extends DurableObject<Env> {
     if (state.status !== "playing") return;
     state.phase = "play_phase";
     const actor = this.player(state, pending.actorId);
-    if (actor.bot && state.currentTurnPlayerId === actor.id) void this.advanceTurn(state, "Bot kết thúc lượt");
+    if (actor.bot && state.currentTurnPlayerId === actor.id) {
+      // Let the alarm own the async turn transition so it is persisted by
+      // the Durable Object alarm transaction instead of a floating promise.
+      state.turnDeadline = Date.now() + 100;
+      void this.ctx.storage.setAlarm(state.turnDeadline);
+    }
   }
   private runBotResponse(state: MatchState): void {
     const pending = state.pendingBang;
@@ -768,8 +778,20 @@ export class BangBangMatch extends DurableObject<Env> {
     await this.advanceTurn(state, "Hết giờ");
   }
   private async advanceTurn(state: MatchState, reason: string): Promise<void> {
-    const alive = state.players.filter((player) => player.alive).sort((a, b) => a.seat - b.seat); const index = alive.findIndex((player) => player.id === state.currentTurnPlayerId);
-    state.currentTurnPlayerId = alive[(index + 1) % alive.length].id; state.turnNumber++; state.bangUsedThisTurn = 0; state.phase = "turn_start"; state.publicLog.push(reason); state.turnDeadline = Date.now() + state.turnDurationSeconds * 1000; void this.ctx.storage.setAlarm(state.turnDeadline); await this.runBotTurn(state);
+    const order = state.turnOrder ?? state.players.slice().sort((a, b) => a.seat - b.seat).map((player) => player.id);
+    if (!order.length || state.status !== "playing") return;
+    const startIndex = state.currentPlayerIndex ?? Math.max(0, order.indexOf(state.currentTurnPlayerId ?? ""));
+    let nextIndex = startIndex;
+    for (let offset = 1; offset <= order.length; offset++) {
+      const candidateIndex = (startIndex + offset) % order.length;
+      const candidate = state.players.find((player) => player.id === order[candidateIndex]);
+      if (candidate?.alive) { nextIndex = candidateIndex; break; }
+    }
+    if (nextIndex <= startIndex) state.roundNumber = (state.roundNumber ?? 1) + 1;
+    state.turnOrder = order; state.currentPlayerIndex = nextIndex; state.currentTurnPlayerId = order[nextIndex];
+    state.turnNumber++; state.bangUsedThisTurn = 0; state.phase = "turn_start"; state.pendingBang = undefined;
+    state.publicLog.push(reason); state.turnDeadline = Date.now() + state.turnDurationSeconds * 1000;
+    void this.ctx.storage.setAlarm(state.turnDeadline); await this.runBotTurn(state);
   }
   private async runBotTurn(state: MatchState): Promise<void> {
     const bot = state.players.find((player) => player.id === state.currentTurnPlayerId);
@@ -782,6 +804,10 @@ export class BangBangMatch extends DurableObject<Env> {
     const target = state.players.find((player) => player.alive && !player.bot && player.id !== bot.id && this.distance(state, bot, player) <= bot.attackRange);
     if (bang && target && String(state.phase) === "play_phase") this.play(state, bot.id, bang, target.id);
     if (String(state.phase) === "play_phase") await this.endTurn(state, bot.id);
+    if (String(state.phase) === "discard_phase" && state.currentTurnPlayerId === bot.id) {
+      const excess = Math.max(0, bot.hand.length - bot.health);
+      await this.discardCards(state, bot.id, bot.hand.slice(0, excess));
+    }
   }
   private damage(state: MatchState, targetId: string, actorId: string, log: string): void {
     const target = this.player(state, targetId);

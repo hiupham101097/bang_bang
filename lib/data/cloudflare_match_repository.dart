@@ -119,9 +119,11 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
     String action, [
     Map<String, dynamic> payload = const {},
   ]) async {
+    final requestId =
+        '${DateTime.now().microsecondsSinceEpoch}_${Random.secure().nextInt(1 << 32)}';
     final data = await _post('/v1/rooms/$roomId', {
       'action': action,
-      'payload': payload,
+      'payload': {...payload, 'requestId': requestId},
     });
     final rawRoom = data['room'];
     if (rawRoom is Map) {
