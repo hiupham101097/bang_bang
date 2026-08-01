@@ -1077,6 +1077,33 @@ class OnlineBattleScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final playerId = room.members
+        .where((member) => member.isHost)
+        .map((member) => member.id)
+        .firstOrNull;
+    final activePlayer = room.memberFor(room.currentTurnPlayerId ?? '');
+    final isMyTurn = playerId != null && playerId == room.currentTurnPlayerId;
+    final canDraw = isMyTurn && room.phase == 'turn_start';
+    final canPlay = isMyTurn && room.phase == 'play_phase';
+    return _RoundBattleTable(
+      repository: repository,
+      room: room,
+      playerId: playerId,
+      activePlayer: activePlayer,
+      canDraw: canDraw,
+      canPlay: canPlay,
+      onDraw: playerId == null
+          ? null
+          : () => _drawTurn(context, playerId, activePlayer?.characterId),
+      onEndTurn: canPlay ? () => _call(context, 'requestEndTurn') : null,
+      onPlay: playerId == null || !canPlay
+          ? null
+          : (cardId) => _playCard(context, cardId, playerId),
+    );
+  }
+
+  // ignore: unused_element
+  Widget _buildLegacyTable(BuildContext context) {
     // The waiting room has already authenticated and marks the local
     // member as host in every authoritative room snapshot.  Building the
     // table from that snapshot avoids a second async gate that can leave an
@@ -1231,6 +1258,229 @@ class OnlineBattleScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+class _RoundBattleTable extends StatelessWidget {
+  const _RoundBattleTable({
+    required this.repository,
+    required this.room,
+    required this.playerId,
+    required this.activePlayer,
+    required this.canDraw,
+    required this.canPlay,
+    required this.onDraw,
+    required this.onEndTurn,
+    required this.onPlay,
+  });
+
+  final OnlineRoomRepository repository;
+  final OnlineRoom room;
+  final String? playerId;
+  final RoomMember? activePlayer;
+  final bool canDraw;
+  final bool canPlay;
+  final VoidCallback? onDraw;
+  final VoidCallback? onEndTurn;
+  final ValueChanged<String>? onPlay;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: const Color(0xff160c08),
+    body: SafeArea(
+      child: LayoutBuilder(
+        builder: (context, size) {
+          final center = Offset(size.maxWidth / 2, size.maxHeight * .43);
+          final radius = math.min(size.maxWidth * .39, size.maxHeight * .31);
+          return Stack(
+            children: [
+              const Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    image: DecorationImage(
+                      image: AssetImage('assets/images/room_table.png'),
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 8,
+                left: 0,
+                right: 0,
+                child: Text(
+                  activePlayer?.id == playerId
+                      ? 'DEN LUOT CUA BAN'
+                      : 'LUOT CUA ${activePlayer?.displayName ?? ''}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xffffd272),
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              Positioned(
+                left: center.dx - 65,
+                top: center.dy - 58,
+                child: Row(
+                  children: const [
+                    _TableDeck(label: 'RUT'),
+                    SizedBox(width: 12),
+                    _TableDeck(label: 'BO'),
+                  ],
+                ),
+              ),
+              ...room.members.asMap().entries.map((entry) {
+                final angle =
+                    -math.pi / 2 +
+                    (2 * math.pi * entry.key / room.members.length);
+                final left = center.dx + math.cos(angle) * radius - 58;
+                final top = center.dy + math.sin(angle) * radius - 38;
+                final member = entry.value;
+                return Positioned(
+                  left: left,
+                  top: top,
+                  child: _RoundSeat(
+                    member: member,
+                    active: member.id == room.currentTurnPlayerId,
+                  ),
+                );
+              }),
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: 92,
+                child: Text(
+                  room.publicLog.isEmpty
+                      ? _phaseLabel(room.phase)
+                      : room.publicLog.last,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white70),
+                ),
+              ),
+              Positioned(
+                left: 8,
+                right: 8,
+                bottom: 42,
+                height: 46,
+                child: StreamBuilder<List<String>>(
+                  stream: repository.watchHand(room.id),
+                  builder: (context, snapshot) => ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: (snapshot.data ?? const [])
+                        .map(
+                          (card) => Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: FilledButton.tonal(
+                              onPressed: onPlay == null
+                                  ? null
+                                  : () => onPlay!(card),
+                              child: Text(_cardLabel(card)),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: 4,
+                left: 0,
+                right: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    FilledButton(
+                      onPressed: canDraw ? onDraw : null,
+                      child: const Text('RUT 2'),
+                    ),
+                    const SizedBox(width: 10),
+                    FilledButton.tonal(
+                      onPressed: canPlay ? onEndTurn : null,
+                      child: const Text('HET LUOT'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    ),
+  );
+}
+
+class _TableDeck extends StatelessWidget {
+  const _TableDeck({required this.label});
+  final String label;
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 54,
+    height: 76,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: const Color(0xffead9a5),
+      border: Border.all(color: const Color(0xffffc451), width: 2),
+      borderRadius: BorderRadius.circular(5),
+    ),
+    child: Text(
+      label,
+      style: const TextStyle(
+        color: Color(0xff26140c),
+        fontWeight: FontWeight.w900,
+      ),
+    ),
+  );
+}
+
+class _RoundSeat extends StatelessWidget {
+  const _RoundSeat({required this.member, required this.active});
+  final RoomMember member;
+  final bool active;
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 116,
+    padding: const EdgeInsets.all(6),
+    decoration: BoxDecoration(
+      color: const Color(0xdd2c190f),
+      border: Border.all(
+        color: active ? const Color(0xffffc451) : const Color(0xff8d6236),
+        width: active ? 2 : 1,
+      ),
+      borderRadius: BorderRadius.circular(7),
+    ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        CircleAvatar(
+          radius: 17,
+          backgroundColor: const Color(0xffc9984d),
+          child: Text(
+            '${member.health}',
+            style: const TextStyle(
+              color: Colors.black,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        Text(
+          member.displayName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        Text(
+          '${member.cardCount} BAI',
+          style: const TextStyle(color: Colors.white70, fontSize: 10),
+        ),
+      ],
+    ),
+  );
 }
 
 class _TurnTimeoutDriver extends StatefulWidget {
