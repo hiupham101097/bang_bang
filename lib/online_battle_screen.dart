@@ -1289,8 +1289,9 @@ class _RoundBattleTable extends StatelessWidget {
     body: SafeArea(
       child: LayoutBuilder(
         builder: (context, size) {
-          final center = Offset(size.maxWidth / 2, size.maxHeight * .43);
-          final radius = math.min(size.maxWidth * .39, size.maxHeight * .31);
+          final center = Offset(size.maxWidth / 2, size.maxHeight * .42);
+          final radiusX = size.maxWidth * .405;
+          final radiusY = math.max(96.0, (size.maxHeight - 180) * .36);
           return Stack(
             children: [
               const Positioned.fill(
@@ -1320,8 +1321,8 @@ class _RoundBattleTable extends StatelessWidget {
                 ),
               ),
               Positioned(
-                left: center.dx - 65,
-                top: center.dy - 58,
+                left: center.dx - 82,
+                top: center.dy - 20,
                 child: Row(
                   children: const [
                     _TableDeck(label: 'RUT'),
@@ -1334,8 +1335,8 @@ class _RoundBattleTable extends StatelessWidget {
                 final angle =
                     -math.pi / 2 +
                     (2 * math.pi * entry.key / room.members.length);
-                final left = center.dx + math.cos(angle) * radius - 58;
-                final top = center.dy + math.sin(angle) * radius - 38;
+                final left = center.dx + math.cos(angle) * radiusX - 58;
+                final top = center.dy + math.sin(angle) * radiusY - 38;
                 final member = entry.value;
                 return Positioned(
                   left: left,
@@ -1349,7 +1350,7 @@ class _RoundBattleTable extends StatelessWidget {
               Positioned(
                 left: 12,
                 right: 12,
-                bottom: 92,
+                bottom: 154,
                 child: Text(
                   room.publicLog.isEmpty
                       ? _phaseLabel(room.phase)
@@ -1363,8 +1364,8 @@ class _RoundBattleTable extends StatelessWidget {
               Positioned(
                 left: 8,
                 right: 8,
-                bottom: 42,
-                height: 46,
+                bottom: 48,
+                height: 100,
                 child: StreamBuilder<List<String>>(
                   stream: repository.watchHand(room.id),
                   builder: (context, snapshot) => ListView(
@@ -1372,12 +1373,15 @@ class _RoundBattleTable extends StatelessWidget {
                     children: (snapshot.data ?? const [])
                         .map(
                           (card) => Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: FilledButton.tonal(
-                              onPressed: onPlay == null
+                            padding: const EdgeInsets.only(right: 8),
+                            child: GameCardWidget(
+                              card: _publicGameCard(card),
+                              width: 58,
+                              height: 92,
+                              isEnabled: onPlay != null,
+                              onTap: onPlay == null
                                   ? null
                                   : () => onPlay!(card),
-                              child: Text(_cardLabel(card)),
                             ),
                           ),
                         )
@@ -1442,7 +1446,8 @@ class _RoundSeat extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     width: 116,
-    padding: const EdgeInsets.all(6),
+    constraints: const BoxConstraints(minHeight: 72),
+    padding: const EdgeInsets.all(5),
     decoration: BoxDecoration(
       color: const Color(0xdd2c190f),
       border: Border.all(
@@ -1451,37 +1456,75 @@ class _RoundSeat extends StatelessWidget {
       ),
       borderRadius: BorderRadius.circular(7),
     ),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
+    child: Row(
       children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: SizedBox(
+            width: 38,
+            height: 54,
+            child: Image.asset(
+              _battleCharacterAsset(member.characterId),
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => const ColoredBox(
+                color: Color(0xffc9984d),
+                child: Icon(Icons.person, color: Color(0xff26140c)),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 5),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                member.displayName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 10,
+                ),
+              ),
+              Text(
+                '${member.health}/${member.maxHealth} MAU · ${member.cardCount} BAI',
+                style: const TextStyle(color: Color(0xffffd272), fontSize: 8),
+              ),
+              if (member.equipment.isNotEmpty)
+                Text(
+                  member.equipment.map(_cardLabel).join(' · '),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white70, fontSize: 7),
+                ),
+            ],
+          ),
+        ),
         CircleAvatar(
-          radius: 17,
+          radius: 11,
           backgroundColor: const Color(0xffc9984d),
           child: Text(
             '${member.health}',
             style: const TextStyle(
-              color: Colors.black,
+              color: Color(0xff26140c),
               fontWeight: FontWeight.w900,
+              fontSize: 9,
             ),
           ),
-        ),
-        Text(
-          member.displayName,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        Text(
-          '${member.cardCount} BAI',
-          style: const TextStyle(color: Colors.white70, fontSize: 10),
         ),
       ],
     ),
   );
 }
+
+String _battleCharacterAsset(String? id) => switch (id) {
+  null => 'assets/images/bang_bang_logo.png',
+  'rose_doolan' => 'assets/images/characters/rose_oolan.png',
+  _ => 'assets/images/characters/$id.png',
+};
 
 class _TurnTimeoutDriver extends StatefulWidget {
   const _TurnTimeoutDriver({
