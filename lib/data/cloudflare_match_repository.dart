@@ -121,10 +121,14 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
   ]) => _post('/v1/rooms/$roomId', {'action': action, 'payload': payload});
 
   final Map<String, Stream<OnlineRoom?>> _roomStreams = {};
+  final Map<String, OnlineRoom?> _roomSnapshots = {};
 
   @override
-  Stream<OnlineRoom?> watchRoom(String roomId) {
-    return _roomStreams.putIfAbsent(
+  Stream<OnlineRoom?> watchRoom(String roomId) async* {
+    if (_roomSnapshots.containsKey(roomId)) {
+      yield _roomSnapshots[roomId];
+    }
+    yield* _roomStreams.putIfAbsent(
       roomId,
       () => _watchRoomSocket(roomId).asBroadcastStream(),
     );
@@ -136,16 +140,32 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
       scheme: baseUrl.startsWith('https') ? 'wss' : 'ws',
       queryParameters: {'token': _token},
     );
-    final channel = WebSocketChannel.connect(wsUrl, protocols: const []);
     try {
-      await for (final event in channel.stream) {
-        final data = jsonDecode(event as String) as Map<String, dynamic>;
-        if (data['type'] == 'state' && data['room'] is Map) {
-          yield _roomFromJson(Map<String, dynamic>.from(data['room'] as Map));
+      final channel = WebSocketChannel.connect(wsUrl, protocols: const []);
+      try {
+        await for (final event in channel.stream) {
+          final data = jsonDecode(event as String) as Map<String, dynamic>;
+          if (data['type'] == 'state' && data['room'] is Map) {
+            yield _roomFromJson(Map<String, dynamic>.from(data['room'] as Map));
+          }
         }
+      } finally {
+        await channel.sink.close();
       }
-    } finally {
-      await channel.sink.close();
+    } catch (_) {
+      // The table must remain usable on networks that block WebSockets.
+    }
+    while (true) {
+      try {
+        final data = await _get('/v1/rooms/$roomId');
+        final rawRoom = data['room'];
+        if (rawRoom is Map) {
+          yield _roomFromJson(Map<String, dynamic>.from(rawRoom));
+        }
+      } catch (_) {
+        yield null;
+      }
+      await Future<void>.delayed(const Duration(seconds: 2));
     }
   }
 
@@ -212,7 +232,7 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
       'starting' => RoomStatus.starting,
       _ => RoomStatus.waiting,
     };
-    return OnlineRoom(
+    final room = OnlineRoom(
       id: data['id'] as String,
       code: data['code'] as String,
       hostUid: data['hostId'] as String,
@@ -243,6 +263,8 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
       discardTopCardId: (data['discard'] as List?)?.lastOrNull as String?,
       members: rawPlayers.map(_memberFromJson).toList(),
     );
+    _roomSnapshots[room.id] = room;
+    return room;
   }
 
   RoomMember _memberFromJson(Map<String, dynamic> data) => RoomMember(

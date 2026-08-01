@@ -9,16 +9,6 @@ import 'game_setup_screen.dart';
 import 'online_battle_screen.dart';
 import 'ui/bang_ui.dart';
 
-const ButtonStyle _compactButtonStyle = ButtonStyle(
-  minimumSize: WidgetStatePropertyAll(Size(0, 26)),
-  padding: WidgetStatePropertyAll(
-    EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-  ),
-  visualDensity: VisualDensity(horizontal: -4, vertical: -4),
-  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-  textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 9)),
-);
-
 const ButtonStyle _lobbyButtonStyle = ButtonStyle(
   minimumSize: WidgetStatePropertyAll(Size(0, 28)),
   padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 7)),
@@ -109,9 +99,26 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
     if (!mounted || room == null) return;
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) =>
+      PageRouteBuilder<void>(
+        pageBuilder: (_, _, _) =>
             WaitingRoomScreen(repository: widget.repository, roomId: room.id),
+        transitionDuration: const Duration(milliseconds: 260),
+        transitionsBuilder: (_, animation, _, child) => FadeTransition(
+          opacity: animation,
+          child: SlideTransition(
+            position:
+                Tween<Offset>(
+                  begin: const Offset(0.035, 0),
+                  end: Offset.zero,
+                ).animate(
+                  CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                  ),
+                ),
+            child: child,
+          ),
+        ),
       ),
     );
   }
@@ -193,10 +200,11 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: const Color(0xff160c08),
     appBar: AppBar(
-      toolbarHeight: 30,
+      toolbarHeight: 46,
       title: const Text('PHÒNG ĐẤU'),
       actions: [_appBarControls()],
     ),
+    floatingActionButton: _CreateRoomButton(onPressed: _create),
     body: SafeArea(
       top: false,
       child: AnimatedBuilder(
@@ -217,7 +225,17 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
                   ),
                 ),
               const SizedBox(height: 5),
-              Expanded(child: _rooms()),
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 240),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  child: KeyedSubtree(
+                    key: ValueKey('${model.loading}-${model.rooms.length}'),
+                    child: _rooms(),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -230,7 +248,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
     children: [
       SizedBox(
         width: 108,
-        height: 26,
+        height: 34,
         child: TextField(
           controller: code,
           textCapitalization: TextCapitalization.characters,
@@ -240,7 +258,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
             hintText: 'Mã phòng',
             filled: true,
             isDense: true,
-            contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           ),
           onSubmitted: (_) => _joinCode(),
         ),
@@ -257,12 +275,6 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
         onPressed: _quickJoin,
         child: const Text('NHANH'),
       ),
-      const SizedBox(width: 3),
-      FilledButton(
-        style: _lobbyButtonStyle,
-        onPressed: _create,
-        child: const Text('TẠO'),
-      ),
       const SizedBox(width: 6),
     ],
   );
@@ -273,6 +285,52 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
     onJoin: (room) async =>
         _open(await model.run(() => widget.repository.joinRoom(room.id))),
     onCreate: _create,
+  );
+}
+
+class _CreateRoomButton extends StatefulWidget {
+  const _CreateRoomButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  State<_CreateRoomButton> createState() => _CreateRoomButtonState();
+}
+
+class _CreateRoomButtonState extends State<_CreateRoomButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 180),
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ScaleTransition(
+    scale: Tween<double>(
+      begin: 1,
+      end: .94,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut)),
+    child: FloatingActionButton.extended(
+      heroTag: 'create_room',
+      backgroundColor: const Color(0xffe9ba57),
+      foregroundColor: const Color(0xff43200d),
+      icon: const Icon(Icons.add_circle_outline),
+      label: const Text(
+        'TẠO PHÒNG',
+        style: TextStyle(fontWeight: FontWeight.w900),
+      ),
+      onPressed: () async {
+        await _controller.forward();
+        await _controller.reverse();
+        widget.onPressed();
+      },
+    ),
   );
 }
 
@@ -1134,29 +1192,44 @@ class _CreateRoomDialogState extends State<CreateRoomDialog> {
           ],
         ),
       ),
-      actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
       actions: [
-        TextButton(
-          style: _compactButtonStyle,
-          onPressed: () => Navigator.pop(context),
-          child: const Text('HỦY'),
-        ),
-        FilledButton(
-          style: _compactButtonStyle,
-          onPressed: () => Navigator.pop(
-            context,
-            RoomSettings(
-              roomName: 'Bàn mới',
-              maxPlayers: maxPlayers,
-              isPublic: isPublic,
-              turnDurationSeconds: duration,
-              voiceEnabled: voice,
-              chatEnabled: chat,
-              allowBots: bots,
-              initialBotCount: bots ? botCount : 0,
+        Row(
+          children: [
+            SizedBox(
+              height: 46,
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('HỦY'),
+              ),
             ),
-          ),
-          child: const Text('TẠO'),
+            const SizedBox(width: 10),
+            Expanded(
+              child: SizedBox(
+                height: 46,
+                child: FilledButton.icon(
+                  icon: const Icon(Icons.add_circle_outline),
+                  label: const Text(
+                    'TẠO PHÒNG',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  onPressed: () => Navigator.pop(
+                    context,
+                    RoomSettings(
+                      roomName: 'Bàn mới',
+                      maxPlayers: maxPlayers,
+                      isPublic: isPublic,
+                      turnDurationSeconds: duration,
+                      voiceEnabled: voice,
+                      chatEnabled: chat,
+                      allowBots: bots,
+                      initialBotCount: bots ? botCount : 0,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     ),

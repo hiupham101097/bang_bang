@@ -69,6 +69,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  bool _openingLobby = false;
+
   @override
   void initState() {
     super.initState();
@@ -95,6 +97,29 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
     ),
   );
+
+  Future<void> _openLobby() async {
+    if (_openingLobby) return;
+    setState(() => _openingLobby = true);
+    try {
+      await widget.repository.ensureSignedIn();
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => OnlineLobbyScreen(repository: widget.repository),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$error')));
+    } finally {
+      if (mounted) setState(() => _openingLobby = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     body: Stack(
@@ -137,13 +162,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     _menu(
                       'BẮT ĐẦU',
                       Icons.play_arrow_rounded,
-                      () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              OnlineLobbyScreen(repository: widget.repository),
-                        ),
-                      ),
+                      _openLobby,
+                      loading: _openingLobby,
                     ),
                     _menu(
                       'NHIỆM VỤ',
@@ -215,14 +235,25 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
     ),
   );
-  Widget _menu(String text, IconData icon, VoidCallback action) => Padding(
+  Widget _menu(
+    String text,
+    IconData icon,
+    VoidCallback? action, {
+    bool loading = false,
+  }) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 4),
     child: SizedBox(
       width: 265,
       height: 44,
       child: ElevatedButton.icon(
-        onPressed: action,
-        icon: Icon(icon),
+        onPressed: loading ? null : action,
+        icon: loading
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Icon(icon),
         label: Text(
           text,
           style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1),
