@@ -189,6 +189,10 @@ export class BangBangMatch extends DurableObject<Env> {
     const user = JSON.parse(request.headers.get("x-bangbang-user") || "null") as User | null;
     if (!user) return fail("Unauthorized", 401);
     if (path === "/ws") return this.websocket(request, user);
+    if (path === "/command" && request.method === "GET") {
+      const state = await this.load();
+      return json({ room: this.snapshot(state, user.id) });
+    }
     if (path !== "/command" || request.method !== "POST") return fail("Not found", 404);
     return this.command(user, await request.json<{ action: Command; payload?: Record<string, unknown> }>());
   }
