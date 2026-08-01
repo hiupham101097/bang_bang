@@ -98,6 +98,63 @@ void main() {
     expect(rooms.single.status, RoomStatus.starting);
     expect(rooms.single.phase, 'role_selection');
   });
+
+  test(
+    'command snapshots update room watchers without waiting for WebSocket',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'bangbang_fallback_player_id': 'player_cache_test_12345',
+      });
+      final repository = CloudflareMatchRepository(
+        'https://match.test',
+        client: MockClient((request) async {
+          if (request.url.path == '/v1/session') {
+            return http.Response(jsonEncode({'token': 'test-token'}), 200);
+          }
+          if (request.url.path == '/v1/rooms') {
+            return http.Response(
+              jsonEncode({
+                'room': _roomSnapshot(
+                  phase: 'lobby',
+                  status: 'waiting',
+                  hand: const [],
+                ),
+              }),
+              201,
+            );
+          }
+          if (request.url.path == '/v1/rooms/ROOM1') {
+            return http.Response(
+              jsonEncode({
+                'room': _roomSnapshot(
+                  phase: 'role_selection',
+                  status: 'starting',
+                  hand: const [],
+                ),
+              }),
+              200,
+            );
+          }
+          return http.Response(jsonEncode({'error': 'unexpected'}), 404);
+        }),
+      );
+
+      final room = await repository.createRoom(
+        const RoomSettings(roomName: 'Test', maxPlayers: 4),
+      );
+      final updates = <OnlineRoom?>[];
+      final subscription = repository.watchRoom(room.id).listen(updates.add);
+      await Future<void>.delayed(Duration.zero);
+
+      await repository.startGame(room.id);
+      await Future<void>.delayed(Duration.zero);
+      await subscription.cancel();
+
+      expect(updates.first?.phase, 'lobby');
+      expect(updates.last?.phase, 'role_selection');
+      expect(updates.last?.status, RoomStatus.starting);
+    },
+  );
 }
 
 Map<String, Object?> _roomSnapshot({

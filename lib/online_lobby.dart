@@ -685,13 +685,10 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
     }
     if (current.status == RoomStatus.starting ||
         current.phase == 'choosing_character') {
-      return _RoomReadyGate(
-        setupStream: widget.repository.watchPrivateSetup(current.id),
-        title: 'DANG NAP VONG CHON',
-        detail: 'Dang lay bo the vai tro va nhan vat...',
-        builder: (context) =>
-            GameSetupScreen(repository: widget.repository, room: current),
-      );
+      // `current` is already an authoritative snapshot received from the
+      // room stream.  Do not wait for a second subscription here: a late
+      // WebSocket event used to leave this gate on the brown loading screen.
+      return GameSetupScreen(repository: widget.repository, room: current);
     }
     if (current.status == RoomStatus.playing) {
       // Do not gate the table behind a second WebSocket subscription. The
@@ -985,38 +982,6 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
             ),
     ),
   );
-}
-
-class _RoomReadyGate extends StatelessWidget {
-  const _RoomReadyGate({
-    required this.title,
-    required this.detail,
-    required this.builder,
-    this.setupStream,
-  });
-
-  final String title;
-  final String detail;
-  final WidgetBuilder builder;
-  final Stream<PrivateSetupState?>? setupStream;
-
-  @override
-  Widget build(BuildContext context) {
-    final setup = setupStream;
-    if (setup != null) {
-      return StreamBuilder<PrivateSetupState?>(
-        stream: setup,
-        builder: (context, snapshot) {
-          if (snapshot.hasData && snapshot.data != null) {
-            return builder(context);
-          }
-          return _RoomBootScreen(title: title, detail: detail);
-        },
-      );
-    }
-
-    return builder(context);
-  }
 }
 
 class _RoomBootScreen extends StatelessWidget {

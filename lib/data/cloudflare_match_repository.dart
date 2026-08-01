@@ -118,20 +118,44 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
     String roomId,
     String action, [
     Map<String, dynamic> payload = const {},
-  ]) => _post('/v1/rooms/$roomId', {'action': action, 'payload': payload});
+  ]) async {
+    final data = await _post('/v1/rooms/$roomId', {
+      'action': action,
+      'payload': payload,
+    });
+    final rawRoom = data['room'];
+    if (rawRoom is Map) {
+      _publishRoom(_roomFromJson(Map<String, dynamic>.from(rawRoom)));
+    }
+    return data;
+  }
 
-  final Map<String, Stream<OnlineRoom?>> _roomStreams = {};
   final Map<String, OnlineRoom?> _roomSnapshots = {};
+  final Map<String, StreamController<OnlineRoom?>> _roomUpdates = {};
+  final Map<String, StreamSubscription<OnlineRoom?>> _roomFeeds = {};
 
   @override
   Stream<OnlineRoom?> watchRoom(String roomId) async* {
+    _startRoomFeed(roomId);
     if (_roomSnapshots.containsKey(roomId)) {
       yield _roomSnapshots[roomId];
     }
-    yield* _roomStreams.putIfAbsent(
-      roomId,
-      () => _watchRoomSocket(roomId).asBroadcastStream(),
-    );
+    yield* _roomUpdates[roomId]!.stream;
+  }
+
+  void _startRoomFeed(String roomId) {
+    _roomUpdates.putIfAbsent(roomId, StreamController<OnlineRoom?>.broadcast);
+    if (_roomFeeds.containsKey(roomId)) return;
+    _roomFeeds[roomId] = _watchRoomSocket(roomId).listen((room) {
+      if (room != null) {
+        _publishRoom(room);
+      }
+    }, onError: _roomUpdates[roomId]!.addError);
+  }
+
+  void _publishRoom(OnlineRoom room) {
+    _roomSnapshots[room.id] = room;
+    _roomUpdates[room.id]?.add(room);
   }
 
   Stream<OnlineRoom?> _watchRoomSocket(String roomId) async* {
@@ -263,7 +287,6 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
       discardTopCardId: (data['discard'] as List?)?.lastOrNull as String?,
       members: rawPlayers.map(_memberFromJson).toList(),
     );
-    _roomSnapshots[room.id] = room;
     return room;
   }
 
@@ -316,7 +339,9 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
       'maxPlayers': settings.maxPlayers,
       'turnDurationSeconds': settings.turnDurationSeconds,
     });
-    return _roomFromJson(Map<String, dynamic>.from(data['room'] as Map));
+    final room = _roomFromJson(Map<String, dynamic>.from(data['room'] as Map));
+    _publishRoom(room);
+    return room;
   }
 
   @override
