@@ -23,8 +23,6 @@ class OnlineBattleScreen extends StatelessWidget {
 
   final OnlineRoomRepository repository;
   final OnlineRoom room;
-  static bool _firstTutorialHandled = false;
-  static bool _hideTutorialForSession = false;
   // The hand is fed by a stream and this keeps the selected card stable while
   // the player decides whether to play it.  A tap must never play a card
   // immediately: the player confirms with the action button below the hand.
@@ -103,7 +101,6 @@ class OnlineBattleScreen extends StatelessWidget {
             actions: [
               TextButton(
                 onPressed: () {
-                  _hideTutorialForSession = dontShowAgain;
                   Navigator.pop(dialogContext);
                 },
                 child: const Text('BỎ QUA'),
@@ -111,7 +108,6 @@ class OnlineBattleScreen extends StatelessWidget {
               FilledButton(
                 onPressed: () {
                   if (step == steps.length - 1) {
-                    _hideTutorialForSession = dontShowAgain;
                     Navigator.pop(dialogContext);
                     return;
                   }
@@ -1080,166 +1076,161 @@ class OnlineBattleScreen extends StatelessWidget {
   );
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<PlayerProfile>(
-    future: repository.ensureSignedIn(),
-    builder: (context, profileSnapshot) {
-      if (profileSnapshot.hasData &&
-          !_firstTutorialHandled &&
-          !_hideTutorialForSession) {
-        _firstTutorialHandled = true;
-        WidgetsBinding.instance.addPostFrameCallback(
-          (_) => _showFirstTimeTutorial(context),
-        );
-      }
-      final playerId = profileSnapshot.data?.uid;
-      final activePlayer = room.memberFor(room.currentTurnPlayerId ?? '');
-      final currentPlayer = playerId == null ? null : room.memberFor(playerId);
-      final isMyTurn = playerId != null && playerId == room.currentTurnPlayerId;
-      final canPlay = isMyTurn && room.phase == 'play_phase';
-      final phase = room.phase;
-      // The authoritative Worker resolves Dynamite/Jail during the draw
-      // command. Do not keep the old Firebase-only gate here, otherwise the
-      // player can be stuck at TURN_START forever.
-      final canDraw = isMyTurn && phase == 'turn_start';
-      return Scaffold(
-        backgroundColor: const Color(0xff160c08),
-        body: Stack(
-          children: [
-            const Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  image: DecorationImage(
-                    image: AssetImage('assets/images/wild_west_town.png'),
-                    fit: BoxFit.cover,
-                    opacity: .92,
-                  ),
+  Widget build(BuildContext context) {
+    // The waiting room has already authenticated and marks the local
+    // member as host in every authoritative room snapshot.  Building the
+    // table from that snapshot avoids a second async gate that can leave an
+    // otherwise valid match as a blank brown page on device.
+    final playerId = room.members
+        .where((member) => member.isHost)
+        .map((member) => member.id)
+        .firstOrNull;
+    final activePlayer = room.memberFor(room.currentTurnPlayerId ?? '');
+    final currentPlayer = playerId == null ? null : room.memberFor(playerId);
+    final isMyTurn = playerId != null && playerId == room.currentTurnPlayerId;
+    final canPlay = isMyTurn && room.phase == 'play_phase';
+    final phase = room.phase;
+    // The authoritative Worker resolves Dynamite/Jail during the draw
+    // command. Do not keep the old Firebase-only gate here, otherwise the
+    // player can be stuck at TURN_START forever.
+    final canDraw = isMyTurn && phase == 'turn_start';
+    return Scaffold(
+      backgroundColor: const Color(0xff160c08),
+      body: Stack(
+        children: [
+          const Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                image: DecorationImage(
+                  image: AssetImage('assets/images/wild_west_town.png'),
+                  fit: BoxFit.cover,
+                  opacity: .92,
                 ),
               ),
             ),
-            const Positioned.fill(child: ColoredBox(color: Color(0x42160c08))),
-            Positioned(
-              left: 4,
-              top: 4,
-              child: _TinyTableButton(
-                icon: Icons.pause,
-                onPressed: () => _showGuide(context, phase, isMyTurn),
+          ),
+          const Positioned.fill(child: ColoredBox(color: Color(0x42160c08))),
+          Positioned(
+            left: 4,
+            top: 4,
+            child: _TinyTableButton(
+              icon: Icons.pause,
+              onPressed: () => _showFirstTimeTutorial(context),
+            ),
+          ),
+          Positioned(
+            right: 4,
+            top: 4,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (room.publicLog.isNotEmpty)
+                  _TinyTableButton(
+                    icon: Icons.history,
+                    onPressed: () => _showActionLog(context),
+                  ),
+                if (room.settings.chatEnabled && GameVoiceChat.isAvailable)
+                  _TinyTableButton(
+                    icon: Icons.forum_outlined,
+                    onPressed: () => _showChat(context),
+                  ),
+                _TinyTableButton(
+                  icon: Icons.help_outline,
+                  onPressed: () => _showGuide(context, phase, isMyTurn),
+                ),
+                if (room.settings.voiceEnabled && GameVoiceChat.isAvailable)
+                  _TinyTableButton(
+                    icon: Icons.mic_none,
+                    onPressed: () => _showVoice(context),
+                  ),
+              ],
+            ),
+          ),
+          Positioned.fill(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 30, 8, 112),
+              child: _CentralActionArea(
+                repository: repository,
+                room: room,
+                playerId: playerId,
               ),
             ),
-            Positioned(
-              right: 4,
-              top: 4,
-              child: Row(
+          ),
+          Positioned(
+            left: 42,
+            top: 4,
+            right: 120,
+            child: _BattleStatusStrip(
+              title: activePlayer == null
+                  ? _phaseLabel(phase)
+                  : isMyTurn
+                  ? 'DEN LUOT CUA BAN'
+                  : activePlayer.displayName,
+              phase: phase,
+              deadline: room.turnDeadlineAt,
+              isMyTurn: isMyTurn,
+            ),
+          ),
+          Positioned(
+            left: 8,
+            right: 8,
+            bottom: 4,
+            child: _BattleBottomRail(
+              equipment: _EquipmentBar(
+                equipment: currentPlayer?.equipment ?? const [],
+              ),
+              role: currentPlayer?.revealedRole,
+              handDock: _BattleHandDock(
+                repository: repository,
+                room: room,
+                isMyTurn: isMyTurn,
+                canPlay: canPlay,
+                activePlayer: activePlayer,
+                onPlay: playerId == null
+                    ? (_) async {}
+                    : (cardId) => _playCard(context, cardId, playerId),
+              ),
+              pending: _pendingActionDock(context, playerId),
+              log: room.publicLog.isEmpty
+                  ? null
+                  : _publicLogLabel(room, room.publicLog.last),
+              actions: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (room.publicLog.isNotEmpty)
-                    _TinyTableButton(
-                      icon: Icons.history,
-                      onPressed: () => _showActionLog(context),
+                  if (canDraw)
+                    FilledButton(
+                      onPressed: () => _drawTurn(
+                        context,
+                        playerId,
+                        activePlayer?.characterId,
+                      ),
+                      child: const Text('RUT 2'),
                     ),
-                  if (room.settings.chatEnabled && GameVoiceChat.isAvailable)
-                    _TinyTableButton(
-                      icon: Icons.forum_outlined,
-                      onPressed: () => _showChat(context),
-                    ),
-                  _TinyTableButton(
-                    icon: Icons.help_outline,
-                    onPressed: () => _showGuide(context, phase, isMyTurn),
-                  ),
-                  if (room.settings.voiceEnabled && GameVoiceChat.isAvailable)
-                    _TinyTableButton(
-                      icon: Icons.mic_none,
-                      onPressed: () => _showVoice(context),
+                  if (canPlay)
+                    FilledButton.tonal(
+                      onPressed: () => _call(context, 'requestEndTurn'),
+                      child: const Text('HET LUOT'),
                     ),
                 ],
               ),
             ),
-            Positioned.fill(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 30, 8, 112),
-                child: _CentralActionArea(
-                  repository: repository,
-                  room: room,
-                  playerId: playerId,
-                ),
-              ),
-            ),
-            Positioned(
-              left: 42,
-              top: 4,
-              right: 120,
-              child: _BattleStatusStrip(
-                title: activePlayer == null
-                    ? _phaseLabel(phase)
-                    : isMyTurn
-                    ? 'DEN LUOT CUA BAN'
-                    : activePlayer.displayName,
-                phase: phase,
-                deadline: room.turnDeadlineAt,
-                isMyTurn: isMyTurn,
-              ),
-            ),
-            Positioned(
-              left: 8,
-              right: 8,
-              bottom: 4,
-              child: _BattleBottomRail(
-                equipment: _EquipmentBar(
-                  equipment: currentPlayer?.equipment ?? const [],
-                ),
-                role: currentPlayer?.revealedRole,
-                handDock: _BattleHandDock(
-                  repository: repository,
-                  room: room,
-                  isMyTurn: isMyTurn,
-                  canPlay: canPlay,
-                  activePlayer: activePlayer,
-                  onPlay: playerId == null
-                      ? (_) async {}
-                      : (cardId) => _playCard(context, cardId, playerId),
-                ),
-                pending: _pendingActionDock(context, playerId),
-                log: room.publicLog.isEmpty
-                    ? null
-                    : _publicLogLabel(room, room.publicLog.last),
-                actions: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (canDraw)
-                      FilledButton(
-                        onPressed: () => _drawTurn(
-                          context,
-                          playerId,
-                          activePlayer?.characterId,
-                        ),
-                        child: const Text('RUT 2'),
-                      ),
-                    if (canPlay)
-                      FilledButton.tonal(
-                        onPressed: () => _call(context, 'requestEndTurn'),
-                        child: const Text('HET LUOT'),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            _TurnTimeoutDriver(
-              roomId: room.id,
-              phase: phase,
-              deadline: room.turnDeadlineAt,
-              isMyTurn: isMyTurn,
-              onTurnStartExpired: canDraw
-                  ? () =>
-                        _drawTurn(context, playerId, activePlayer?.characterId)
-                  : null,
-              onPlayExpired: canPlay
-                  ? () => _call(context, 'requestEndTurn')
-                  : null,
-            ),
-          ],
-        ),
-      );
-    },
-  );
+          ),
+          _TurnTimeoutDriver(
+            roomId: room.id,
+            phase: phase,
+            deadline: room.turnDeadlineAt,
+            isMyTurn: isMyTurn,
+            onTurnStartExpired: canDraw
+                ? () => _drawTurn(context, playerId, activePlayer?.characterId)
+                : null,
+            onPlayExpired: canPlay
+                ? () => _call(context, 'requestEndTurn')
+                : null,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _TurnTimeoutDriver extends StatefulWidget {
