@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:bangbang/data/online_room_repository.dart';
 import 'package:bangbang/domain/online_models.dart';
+import 'package:bangbang/game_card_widget.dart';
+import 'package:bangbang/game_engine.dart';
 import 'package:bangbang/online_battle_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,7 +26,7 @@ void main() {
       expect(find.byType(AppBar), findsNothing);
       expect(find.byType(SingleChildScrollView), findsNothing);
       expect(find.byType(GridView), findsNothing);
-      expect(find.text('TRANG BI'), findsNWidgets(7));
+      expect(find.text('+ TRANG BI'), findsNWidgets(7));
       expect(find.byTooltip('VOLCANIC 10 SPADE'), findsOneWidget);
       final verticalLists = tester
           .widgetList<ListView>(find.byType(ListView))
@@ -33,15 +35,87 @@ void main() {
       expect(tester.takeException(), isNull);
     }
   });
+
+  testWidgets('bang selects valid targets directly on the table', (
+    tester,
+  ) async {
+    final repository = _FakeBattleRepository();
+    await tester.binding.setSurfaceSize(const Size(640, 360));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: OnlineBattleScreen(
+          repository: repository,
+          room: _room(phase: 'play_phase'),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final bang = tester.widget<GameCardWidget>(
+      find
+          .byWidgetPredicate(
+            (widget) =>
+                widget is GameCardWidget &&
+                widget.card.type == CardType.bang &&
+                widget.onTap != null,
+          )
+          .first,
+    );
+    bang.onTap!();
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.gps_fixed), findsNWidgets(2));
+
+    await tester.tap(find.byIcon(Icons.gps_fixed).first);
+    await tester.pumpAndSettle();
+    expect(repository.lastActionName, 'playCard');
+    expect(repository.lastPayload?['targetPlayerId'], isNotNull);
+  });
+
+  testWidgets('bang target gets ten seconds and dodge controls', (
+    tester,
+  ) async {
+    final repository = _FakeBattleRepository(
+      pendingActions: [
+        {
+          'id': 'bang-1',
+          'actionType': 'bang',
+          'actorPlayerId': 'p1',
+          'targetPlayerId': 'p0',
+          'currentTargetId': 'p0',
+          'responseDeadlineAt': DateTime.now()
+              .add(const Duration(seconds: 10))
+              .millisecondsSinceEpoch,
+          'requiredDodges': 1,
+        },
+      ],
+    );
+    await tester.binding.setSurfaceSize(const Size(640, 360));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: OnlineBattleScreen(
+          repository: repository,
+          room: _room(phase: 'waiting_response'),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('NE'), findsOneWidget);
+    expect(find.text('NHAN DAN'), findsOneWidget);
+    expect(find.textContaining('Phản ứng: 10 giây'), findsOneWidget);
+  });
 }
 
-OnlineRoom _room() => OnlineRoom(
+OnlineRoom _room({String phase = 'turn_start'}) => OnlineRoom(
   id: 'room',
   code: 'ABC123',
   settings: const RoomSettings(roomName: 'Test', maxPlayers: 8),
   hostUid: 'p0',
   status: RoomStatus.playing,
-  phase: 'turn_start',
+  phase: phase,
   currentTurnPlayerId: 'p0',
   turnDeadlineAt: DateTime.now().add(const Duration(seconds: 60)),
   discardTopCardId: 'beer_2_heart',
@@ -64,6 +138,12 @@ OnlineRoom _room() => OnlineRoom(
 );
 
 class _FakeBattleRepository implements OnlineRoomRepository {
+  _FakeBattleRepository({this.pendingActions = const []});
+
+  final List<Map<String, dynamic>> pendingActions;
+  String? lastActionName;
+  Map<String, dynamic>? lastPayload;
+
   @override
   Future<PlayerProfile> ensureSignedIn() async =>
       const PlayerProfile(uid: 'p0', displayName: 'P0');
@@ -81,7 +161,7 @@ class _FakeBattleRepository implements OnlineRoomRepository {
 
   @override
   Stream<List<Map<String, dynamic>>> watchPendingActions(String roomId) =>
-      Stream.value(const []);
+      Stream.value(pendingActions);
 
   @override
   Stream<Map<String, dynamic>?> watchPendingAction(String roomId) =>
@@ -133,7 +213,11 @@ class _FakeBattleRepository implements OnlineRoomRepository {
   Future<Map<String, dynamic>> runGameAction(
     String name,
     Map<String, dynamic> payload,
-  ) => _unused();
+  ) async {
+    lastActionName = name;
+    lastPayload = payload;
+    return const {};
+  }
 
   Never _unused() => throw UnimplementedError();
 }

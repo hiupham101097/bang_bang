@@ -161,7 +161,7 @@ class OnlineBattleScreen extends StatelessWidget {
         '• Chọn các lá cần bỏ; lượt chỉ chuyển sau khi bỏ đủ.',
       ],
       'waiting_response' => const [
-        '• Người bị BANG có 8 giây để dùng NÉ hoặc nhận sát thương.',
+        '• Người bị BANG có 10 giây để dùng NÉ hoặc kỹ năng né.',
         '• Barrel hoặc kỹ năng nhân vật có thể tạo thêm cách né.',
       ],
       'waiting_multi_response' => const [
@@ -466,9 +466,11 @@ class OnlineBattleScreen extends StatelessWidget {
   Future<void> _playCard(
     BuildContext context,
     String cardId,
-    String playerId,
-  ) async {
-    String? targetPlayerId;
+    String playerId, [
+    String? preselectedTargetId,
+    bool skipConfirmation = false,
+  ]) async {
+    String? targetPlayerId = preselectedTargetId;
     final needsTarget =
         cardId.startsWith('bang_') ||
         (cardId.startsWith('dodge_') &&
@@ -477,7 +479,7 @@ class OnlineBattleScreen extends StatelessWidget {
         cardId.startsWith('panico_') ||
         cardId.startsWith('cat_balou_') ||
         cardId.startsWith('duello_');
-    if (needsTarget) {
+    if (needsTarget && targetPlayerId == null) {
       final actor = room.memberFor(playerId);
       targetPlayerId = await showModalBottomSheet<String>(
         context: context,
@@ -564,57 +566,65 @@ class OnlineBattleScreen extends StatelessWidget {
         targetPlayerId != null) {
       final target = room.memberFor(targetPlayerId);
       if (target != null && target.equipment.isNotEmpty) {
-        final choice = await showModalBottomSheet<String>(
-          context: context,
-          builder: (sheetContext) => SafeArea(
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                const ListTile(title: Text('CHỌN LÁ BÀI')),
-                if (target.cardCount > 0)
-                  ListTile(
-                    leading: Icon(Icons.style),
-                    title: Text('LẤY NGẪU NHIÊN TRÊN TAY'),
-                    onTap: () => Navigator.pop(sheetContext, '__hand__'),
-                  ),
-                for (final equipment in target.equipment)
-                  ListTile(
-                    leading: const Icon(Icons.inventory_2_outlined),
-                    title: Text(_cardLabel(equipment)),
-                    onTap: () => Navigator.pop(sheetContext, equipment),
-                  ),
-              ],
+        if (skipConfirmation) {
+          equipmentCardId = target.cardCount == 0
+              ? target.equipment.first
+              : null;
+        } else {
+          final choice = await showModalBottomSheet<String>(
+            context: context,
+            builder: (sheetContext) => SafeArea(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  const ListTile(title: Text('CHỌN LÁ BÀI')),
+                  if (target.cardCount > 0)
+                    ListTile(
+                      leading: Icon(Icons.style),
+                      title: Text('LẤY NGẪU NHIÊN TRÊN TAY'),
+                      onTap: () => Navigator.pop(sheetContext, '__hand__'),
+                    ),
+                  for (final equipment in target.equipment)
+                    ListTile(
+                      leading: const Icon(Icons.inventory_2_outlined),
+                      title: Text(_cardLabel(equipment)),
+                      onTap: () => Navigator.pop(sheetContext, equipment),
+                    ),
+                ],
+              ),
             ),
-          ),
-        );
-        if (choice == null) return;
-        equipmentCardId = choice == '__hand__' ? null : choice;
+          );
+          if (choice == null) return;
+          equipmentCardId = choice == '__hand__' ? null : choice;
+        }
       }
     }
     if (!context.mounted) return;
     final isEquipment = _isEquipmentCard(cardId);
     final actionLabel = isEquipment ? 'ĐẶT BÀI' : 'ĐÁNH';
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(actionLabel),
-        content: Text(
-          targetPlayerId == null
-              ? 'Dùng ${_cardLabel(cardId)}?'
-              : 'Dùng ${_cardLabel(cardId)} vào ${room.memberFor(targetPlayerId)?.displayName ?? 'mục tiêu này'}?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('HỦY'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(actionLabel),
-          ),
-        ],
-      ),
-    );
+    final confirmed = preselectedTargetId != null || skipConfirmation
+        ? true
+        : await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: Text(actionLabel),
+              content: Text(
+                targetPlayerId == null
+                    ? 'Dùng ${_cardLabel(cardId)}?'
+                    : 'Dùng ${_cardLabel(cardId)} vào ${room.memberFor(targetPlayerId)?.displayName ?? 'mục tiêu này'}?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('HỦY'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: Text(actionLabel),
+                ),
+              ],
+            ),
+          );
     if (confirmed != true || !context.mounted) return;
     final actionName =
         cardId.startsWith('jail_') ||
@@ -700,42 +710,16 @@ class OnlineBattleScreen extends StatelessWidget {
   Future<void> _drawTurn(
     BuildContext context,
     String playerId,
-    String? characterId,
-  ) async {
+    String? characterId, [
+    String? jesseTargetId,
+  ]) async {
     var action = 'drawTurnCards';
-    String? targetPlayerId;
+    String? targetPlayerId = jesseTargetId;
     if (characterId == 'kit_carlson') {
       action = 'openKitCarlson';
     } else if (characterId == 'black_jack' || characterId == 'pedro_ramirez') {
       action = 'drawCharacterTurnCards';
     } else if (characterId == 'jesse_jones') {
-      targetPlayerId = await showModalBottomSheet<String>(
-        context: context,
-        builder: (sheetContext) => SafeArea(
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.style),
-                title: const Text('RÚT 2 LÁ TỪ BỘ BÀI'),
-                onTap: () => Navigator.pop(sheetContext, ''),
-              ),
-              for (final member in room.members.where(
-                (member) =>
-                    member.id != playerId &&
-                    member.isAlive &&
-                    member.cardCount > 0,
-              ))
-                ListTile(
-                  leading: const Icon(Icons.person_search),
-                  title: Text('LẤY 1 LÁ TỪ ${member.displayName}'),
-                  onTap: () => Navigator.pop(sheetContext, member.id),
-                ),
-            ],
-          ),
-        ),
-      );
-      if (targetPlayerId == null) return;
       action = 'drawJesseJones';
     }
     if (!context.mounted) return;
@@ -1066,6 +1050,11 @@ class OnlineBattleScreen extends StatelessWidget {
                     fontWeight: FontWeight.w900,
                   ),
                 ),
+                if (isMyResponse)
+                  _ResponseCountdown(
+                    deadline: action['responseDeadlineAt'],
+                    onExpired: () {},
+                  ),
                 ...buttons,
               ],
             );
@@ -1077,12 +1066,14 @@ class OnlineBattleScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final playerId = room.members
-        .where((member) => member.isHost)
-        .map((member) => member.id)
-        .firstOrNull;
+    final playerId =
+        room.members
+            .where((member) => member.isHost)
+            .map((member) => member.id)
+            .firstOrNull ??
+        room.hostUid;
     final activePlayer = room.memberFor(room.currentTurnPlayerId ?? '');
-    final isMyTurn = playerId != null && playerId == room.currentTurnPlayerId;
+    final isMyTurn = playerId == room.currentTurnPlayerId;
     final canDraw = isMyTurn && room.phase == 'turn_start';
     final canPlay = isMyTurn && room.phase == 'play_phase';
     return _RoundBattleTable(
@@ -1092,13 +1083,24 @@ class OnlineBattleScreen extends StatelessWidget {
       activePlayer: activePlayer,
       canDraw: canDraw,
       canPlay: canPlay,
-      onDraw: playerId == null
-          ? null
-          : () => _drawTurn(context, playerId, activePlayer?.characterId),
+      onDraw: () => _drawTurn(context, playerId, activePlayer?.characterId),
       onEndTurn: canPlay ? () => _call(context, 'requestEndTurn') : null,
-      onPlay: playerId == null || !canPlay
+      onPlay: !canPlay
           ? null
-          : (cardId) => _playCard(context, cardId, playerId),
+          : (cardId) => _playCard(context, cardId, playerId, null, true),
+      onTargetedPlay: !canPlay
+          ? null
+          : (cardId, targetId) =>
+                _playCard(context, cardId, playerId, targetId),
+      onJesseDraw: canDraw && activePlayer?.characterId == 'jesse_jones'
+          ? (targetId) => _drawTurn(
+              context,
+              playerId,
+              activePlayer?.characterId,
+              targetId,
+            )
+          : null,
+      pendingDock: _pendingActionDock(context, playerId),
     );
   }
 
@@ -1108,13 +1110,15 @@ class OnlineBattleScreen extends StatelessWidget {
     // member as host in every authoritative room snapshot.  Building the
     // table from that snapshot avoids a second async gate that can leave an
     // otherwise valid match as a blank brown page on device.
-    final playerId = room.members
-        .where((member) => member.isHost)
-        .map((member) => member.id)
-        .firstOrNull;
+    final playerId =
+        room.members
+            .where((member) => member.isHost)
+            .map((member) => member.id)
+            .firstOrNull ??
+        room.hostUid;
     final activePlayer = room.memberFor(room.currentTurnPlayerId ?? '');
-    final currentPlayer = playerId == null ? null : room.memberFor(playerId);
-    final isMyTurn = playerId != null && playerId == room.currentTurnPlayerId;
+    final currentPlayer = room.memberFor(playerId);
+    final isMyTurn = playerId == room.currentTurnPlayerId;
     final canPlay = isMyTurn && room.phase == 'play_phase';
     final phase = room.phase;
     // The authoritative Worker resolves Dynamite/Jail during the draw
@@ -1213,9 +1217,7 @@ class OnlineBattleScreen extends StatelessWidget {
                 isMyTurn: isMyTurn,
                 canPlay: canPlay,
                 activePlayer: activePlayer,
-                onPlay: playerId == null
-                    ? (_) async {}
-                    : (cardId) => _playCard(context, cardId, playerId),
+                onPlay: (cardId) => _playCard(context, cardId, playerId),
               ),
               pending: _pendingActionDock(context, playerId),
               log: room.publicLog.isEmpty
@@ -1260,7 +1262,7 @@ class OnlineBattleScreen extends StatelessWidget {
   }
 }
 
-class _RoundBattleTable extends StatelessWidget {
+class _RoundBattleTable extends StatefulWidget {
   const _RoundBattleTable({
     required this.repository,
     required this.room,
@@ -1271,6 +1273,9 @@ class _RoundBattleTable extends StatelessWidget {
     required this.onDraw,
     required this.onEndTurn,
     required this.onPlay,
+    required this.onTargetedPlay,
+    required this.onJesseDraw,
+    required this.pendingDock,
   });
 
   final OnlineRoomRepository repository;
@@ -1282,6 +1287,78 @@ class _RoundBattleTable extends StatelessWidget {
   final VoidCallback? onDraw;
   final VoidCallback? onEndTurn;
   final ValueChanged<String>? onPlay;
+  final void Function(String cardId, String targetId)? onTargetedPlay;
+  final ValueChanged<String>? onJesseDraw;
+  final Widget pendingDock;
+
+  @override
+  State<_RoundBattleTable> createState() => _RoundBattleTableState();
+}
+
+class _RoundBattleTableState extends State<_RoundBattleTable> {
+  String? _selectedCardId;
+  bool _choosingJesseTarget = false;
+
+  bool get _isTargeting {
+    final cardId = _selectedCardId;
+    if (cardId == null) return false;
+    return cardId.startsWith('bang_') ||
+        cardId.startsWith('jail_') ||
+        cardId.startsWith('panico_') ||
+        cardId.startsWith('cat_balou_') ||
+        cardId.startsWith('duello_') ||
+        (cardId.startsWith('dodge_') &&
+            widget.room.memberFor(widget.playerId ?? '')?.characterId ==
+                'calamity_janet');
+  }
+
+  void _selectCard(String cardId) {
+    if (widget.onPlay == null) return;
+    setState(() {
+      _selectedCardId = _selectedCardId == cardId ? null : cardId;
+    });
+  }
+
+  void _playSelected() {
+    final cardId = _selectedCardId;
+    final callback = widget.onPlay;
+    if (cardId == null || callback == null || _isTargeting) return;
+    setState(() => _selectedCardId = null);
+    callback(cardId);
+  }
+
+  bool _canTarget(RoomMember target) {
+    final cardId = _selectedCardId;
+    final playerId = widget.playerId;
+    if (_choosingJesseTarget) {
+      return target.id != playerId && target.isAlive && target.cardCount > 0;
+    }
+    if (!_isTargeting || cardId == null || playerId == null) return false;
+    if (target.id == playerId || !target.isAlive) return false;
+    final actor = widget.room.memberFor(playerId);
+    final distance = _distanceBetween(widget.room, playerId, target.id);
+    return _targetBlockedReason(
+          room: widget.room,
+          cardId: cardId,
+          actor: actor,
+          target: target,
+          distance: distance,
+        ) ==
+        null;
+  }
+
+  void _fireAt(RoomMember target) {
+    if (_choosingJesseTarget && _canTarget(target)) {
+      setState(() => _choosingJesseTarget = false);
+      widget.onJesseDraw?.call(target.id);
+      return;
+    }
+    final cardId = _selectedCardId;
+    final callback = widget.onTargetedPlay;
+    if (cardId == null || callback == null || !_canTarget(target)) return;
+    setState(() => _selectedCardId = null);
+    callback(cardId, target.id);
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -1289,9 +1366,28 @@ class _RoundBattleTable extends StatelessWidget {
     body: SafeArea(
       child: LayoutBuilder(
         builder: (context, size) {
+          final localPlayer = widget.room.memberFor(widget.playerId ?? '');
+          final opponents =
+              widget.room.members
+                  .where((member) => member.id != widget.playerId)
+                  .toList()
+                ..sort((left, right) {
+                  final localSeat = localPlayer?.seat ?? 0;
+                  final count = widget.room.members.length;
+                  final leftOffset = (left.seat - localSeat + count) % count;
+                  final rightOffset = (right.seat - localSeat + count) % count;
+                  return leftOffset.compareTo(rightOffset);
+                });
+          const opponentPoints = <Offset>[
+            Offset(.89, .43),
+            Offset(.88, .16),
+            Offset(.69, .14),
+            Offset(.47, .14),
+            Offset(.25, .14),
+            Offset(.03, .16),
+            Offset(.02, .43),
+          ];
           final center = Offset(size.maxWidth / 2, size.maxHeight * .42);
-          final radiusX = size.maxWidth * .445;
-          final radiusY = math.max(104.0, (size.maxHeight - 180) * .39);
           return Stack(
             children: [
               const Positioned.fill(
@@ -1309,9 +1405,9 @@ class _RoundBattleTable extends StatelessWidget {
                 left: 0,
                 right: 0,
                 child: Text(
-                  activePlayer?.id == playerId
+                  widget.activePlayer?.id == widget.playerId
                       ? 'DEN LUOT CUA BAN'
-                      : 'LUOT CUA ${activePlayer?.displayName ?? ''}',
+                      : 'LUOT CUA ${widget.activePlayer?.displayName ?? ''}',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Color(0xffffd272),
@@ -1321,42 +1417,55 @@ class _RoundBattleTable extends StatelessWidget {
                 ),
               ),
               Positioned(
-                left: center.dx - 82,
+                left: center.dx - 44,
                 top: center.dy - 20,
                 child: Row(
                   children: const [
                     _TableDeck(label: 'RUT'),
-                    SizedBox(width: 12),
+                    SizedBox(width: 4),
                     _TableDeck(label: 'BO'),
                   ],
                 ),
               ),
-              ...room.members.asMap().entries.map((entry) {
-                final angle =
-                    -math.pi / 2 +
-                    (2 * math.pi * entry.key / room.members.length);
-                final rawLeft = center.dx + math.cos(angle) * radiusX - 61;
-                final rawTop = center.dy + math.sin(angle) * radiusY - 48;
-                final left = rawLeft.clamp(6.0, size.maxWidth - 128.0);
-                final top = rawTop.clamp(38.0, size.maxHeight - 194.0);
+              ...opponents.asMap().entries.map((entry) {
+                final point = opponentPoints[entry.key];
                 final member = entry.value;
                 return Positioned(
-                  left: left,
-                  top: top,
+                  left: (point.dx * size.maxWidth).clamp(
+                    6.0,
+                    size.maxWidth - 128,
+                  ),
+                  top: point.dy * size.maxHeight,
                   child: _RoundSeat(
                     member: member,
-                    active: member.id == room.currentTurnPlayerId,
+                    active: member.id == widget.room.currentTurnPlayerId,
+                    canTarget: _canTarget(member),
+                    onTarget: () => _fireAt(member),
                   ),
                 );
               }),
+              if (localPlayer != null)
+                Positioned(
+                  right: 10,
+                  bottom: 8,
+                  child: _RoundSeat(
+                    member: localPlayer,
+                    active: localPlayer.id == widget.room.currentTurnPlayerId,
+                    isLocal: true,
+                  ),
+                ),
               Positioned(
                 left: 12,
                 right: 12,
                 bottom: 154,
                 child: Text(
-                  room.publicLog.isEmpty
-                      ? _phaseLabel(room.phase)
-                      : room.publicLog.last,
+                  _choosingJesseTarget
+                      ? 'JESSE JONES: CHON NGUOI DE LAY 1 LA'
+                      : _isTargeting
+                      ? 'CHON MUC TIEU TRONG TAM BAN'
+                      : widget.room.publicLog.isEmpty
+                      ? _phaseLabel(widget.room.phase)
+                      : widget.room.publicLog.last,
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -1364,51 +1473,90 @@ class _RoundBattleTable extends StatelessWidget {
                 ),
               ),
               Positioned(
-                left: 8,
-                right: 8,
-                bottom: 48,
+                left: size.maxWidth * .25,
+                right: size.maxWidth * .25,
+                bottom: 2,
                 height: 100,
                 child: StreamBuilder<List<String>>(
-                  stream: repository.watchHand(room.id),
-                  builder: (context, snapshot) => ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: (snapshot.data ?? const [])
-                        .map(
-                          (card) => Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: GameCardWidget(
-                              card: _publicGameCard(card),
-                              width: 58,
-                              height: 92,
-                              isEnabled: onPlay != null,
-                              onTap: onPlay == null
-                                  ? null
-                                  : () => onPlay!(card),
-                            ),
-                          ),
-                        )
-                        .toList(),
+                  stream: widget.repository.watchHand(widget.room.id),
+                  builder: (context, snapshot) => _FannedBattleHand(
+                    cards: snapshot.data ?? const [],
+                    selectedCardId: _selectedCardId,
+                    enabled: widget.onPlay != null,
+                    onTap: _selectCard,
                   ),
                 ),
               ),
               Positioned(
-                bottom: 4,
+                bottom: 104,
                 left: 0,
                 right: 0,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     FilledButton(
-                      onPressed: canDraw ? onDraw : null,
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(74, 32),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: widget.canDraw ? widget.onDraw : null,
                       child: const Text('RUT 2'),
                     ),
+                    if (widget.onJesseDraw != null) ...[
+                      const SizedBox(width: 6),
+                      FilledButton.tonalIcon(
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(76, 32),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: () => setState(
+                          () => _choosingJesseTarget = !_choosingJesseTarget,
+                        ),
+                        icon: const Icon(Icons.person_search, size: 16),
+                        label: const Text('CUOP 1'),
+                      ),
+                    ],
                     const SizedBox(width: 10),
+                    if (_selectedCardId != null && !_isTargeting) ...[
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(78, 32),
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: _playSelected,
+                        icon: Icon(
+                          _isEquipmentCard(_selectedCardId!)
+                              ? Icons.add_to_photos_outlined
+                              : Icons.play_arrow,
+                        ),
+                        label: Text(
+                          _isEquipmentCard(_selectedCardId!)
+                              ? 'DAT BAI'
+                              : 'DANH',
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                    ],
                     FilledButton.tonal(
-                      onPressed: canPlay ? onEndTurn : null,
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(86, 32),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: widget.canPlay ? widget.onEndTurn : null,
                       child: const Text('HET LUOT'),
                     ),
                   ],
                 ),
+              ),
+              Positioned(
+                left: size.maxWidth * .28,
+                right: size.maxWidth * .28,
+                bottom: 140,
+                child: widget.pendingDock,
               ),
             ],
           );
@@ -1418,13 +1566,70 @@ class _RoundBattleTable extends StatelessWidget {
   );
 }
 
+class _FannedBattleHand extends StatelessWidget {
+  const _FannedBattleHand({
+    required this.cards,
+    required this.selectedCardId,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final List<String> cards;
+  final String? selectedCardId;
+  final bool enabled;
+  final ValueChanged<String> onTap;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      if (cards.isEmpty) return const SizedBox.shrink();
+      const cardWidth = 54.0;
+      final availableStep = cards.length <= 1
+          ? cardWidth
+          : (constraints.maxWidth - cardWidth) / (cards.length - 1);
+      final step = availableStep.clamp(24.0, 39.0);
+      final fanWidth = cardWidth + step * (cards.length - 1);
+      return Align(
+        alignment: Alignment.bottomCenter,
+        child: SizedBox(
+          width: fanWidth + 12,
+          height: 108,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              for (var index = 0; index < cards.length; index++)
+                Positioned(
+                  left: index * step,
+                  bottom: cards[index] == selectedCardId ? 10 : 0,
+                  child: AnimatedScale(
+                    scale: cards[index] == selectedCardId ? 1.1 : 1,
+                    duration: const Duration(milliseconds: 150),
+                    curve: Curves.easeOut,
+                    child: GameCardWidget(
+                      card: _publicGameCard(cards[index]),
+                      width: cardWidth,
+                      height: 96,
+                      isSelected: cards[index] == selectedCardId,
+                      isEnabled: enabled,
+                      onTap: enabled ? () => onTap(cards[index]) : null,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
 class _TableDeck extends StatelessWidget {
   const _TableDeck({required this.label});
   final String label;
   @override
   Widget build(BuildContext context) => Container(
-    width: 54,
-    height: 76,
+    width: 42,
+    height: 60,
     alignment: Alignment.center,
     decoration: BoxDecoration(
       color: const Color(0xffead9a5),
@@ -1436,125 +1641,230 @@ class _TableDeck extends StatelessWidget {
       style: const TextStyle(
         color: Color(0xff26140c),
         fontWeight: FontWeight.w900,
+        fontSize: 11,
       ),
     ),
   );
 }
 
 class _RoundSeat extends StatelessWidget {
-  const _RoundSeat({required this.member, required this.active});
+  const _RoundSeat({
+    required this.member,
+    required this.active,
+    this.isLocal = false,
+    this.canTarget = false,
+    this.onTarget,
+  });
   final RoomMember member;
   final bool active;
+  final bool isLocal;
+  final bool canTarget;
+  final VoidCallback? onTarget;
+
   @override
-  Widget build(BuildContext context) => Container(
-    width: 122,
-    height: 96,
-    padding: const EdgeInsets.all(4),
-    decoration: BoxDecoration(
-      color: const Color(0xdd2c190f),
-      border: Border.all(
-        color: active ? const Color(0xffffc451) : const Color(0xff8d6236),
-        width: active ? 2 : 1,
-      ),
-      borderRadius: BorderRadius.circular(7),
-    ),
-    child: Column(
-      children: [
-        Expanded(
-          child: Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: SizedBox(
-                  width: 34,
-                  height: 49,
-                  child: Image.asset(
-                    _battleCharacterAsset(member.characterId),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const ColoredBox(
-                      color: Color(0xffc9984d),
-                      child: Icon(Icons.person, color: Color(0xff26140c)),
-                    ),
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: canTarget ? onTarget : null,
+    child: AnimatedScale(
+      scale: active || canTarget ? 1.04 : 1,
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      child: SizedBox(
+        width: isLocal ? 170 : 104,
+        height: isLocal ? 126 : 82,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: isLocal
+                      ? const Color(0xdd2c190f)
+                      : const Color(0xc42c190f),
+                  border: Border.all(
+                    color: canTarget
+                        ? const Color(0xffff453a)
+                        : active
+                        ? const Color(0xffffc451)
+                        : const Color(0xff8d6236),
+                    width: canTarget || active ? 2 : 1,
                   ),
+                  borderRadius: BorderRadius.circular(7),
                 ),
-              ),
-              const SizedBox(width: 4),
-              Expanded(
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      member.displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 9,
-                      ),
+                    Expanded(
+                      child: _SeatIdentity(member: member, large: isLocal),
                     ),
-                    Text(
-                      '${member.health}/${member.maxHealth} MAU',
-                      style: const TextStyle(
-                        color: Color(0xffffd272),
-                        fontSize: 7,
-                      ),
-                    ),
-                    Text(
-                      '${member.cardCount} BAI',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 7,
-                      ),
-                    ),
+                    const SizedBox(height: 3),
+                    _SeatEquipment(equipment: member.equipment, large: isLocal),
                   ],
                 ),
               ),
-              CircleAvatar(
-                radius: 10,
-                backgroundColor: const Color(0xffc9984d),
-                child: Text(
-                  '${member.health}',
-                  style: const TextStyle(
-                    color: Color(0xff26140c),
-                    fontWeight: FontWeight.w900,
-                    fontSize: 8,
+            ),
+            if (canTarget)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: const BoxDecoration(
+                    color: Color(0xffc62828),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(color: Colors.black54, blurRadius: 6),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.gps_fixed,
+                    color: Colors.white,
+                    size: 24,
                   ),
                 ),
               ),
-            ],
-          ),
+            if (member.revealedRole == 'sheriff')
+              Positioned(
+                left: 3,
+                top: 3,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xffffc451),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.star, size: 9, color: Color(0xff2a160c)),
+                      SizedBox(width: 2),
+                      Text(
+                        'SHERIFF',
+                        style: TextStyle(
+                          color: Color(0xff2a160c),
+                          fontSize: 6,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ),
-        const SizedBox(height: 3),
-        _SeatEquipment(equipment: member.equipment),
-      ],
+      ),
     ),
   );
 }
 
+class _SeatIdentity extends StatelessWidget {
+  const _SeatIdentity({required this.member, required this.large});
+
+  final RoomMember member;
+  final bool large;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      ClipRRect(
+        borderRadius: BorderRadius.circular(3),
+        child: SizedBox(
+          width: large ? 46 : 30,
+          height: large ? 62 : 43,
+          child: Image.asset(
+            _battleCharacterAsset(member.characterId),
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => const ColoredBox(
+              color: Color(0xffc9984d),
+              child: Icon(Icons.person, color: Color(0xff26140c)),
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(width: 4),
+      Expanded(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              member.displayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: large ? 11 : 9,
+              ),
+            ),
+            Text(
+              '${member.health}/${member.maxHealth} MAU',
+              style: TextStyle(
+                color: const Color(0xffffd272),
+                fontSize: large ? 9 : 7,
+              ),
+            ),
+            Row(
+              children: [
+                Icon(Icons.style, color: Colors.white70, size: large ? 12 : 9),
+                const SizedBox(width: 2),
+                Text(
+                  '${member.cardCount}',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: large ? 10 : 8,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      CircleAvatar(
+        radius: large ? 13 : 10,
+        backgroundColor: const Color(0xffc9984d),
+        child: Text(
+          '${member.health}',
+          style: TextStyle(
+            color: const Color(0xff26140c),
+            fontWeight: FontWeight.w900,
+            fontSize: large ? 10 : 8,
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
 class _SeatEquipment extends StatelessWidget {
-  const _SeatEquipment({required this.equipment});
+  const _SeatEquipment({required this.equipment, this.large = false});
 
   final List<String> equipment;
+  final bool large;
 
   @override
   Widget build(BuildContext context) => Container(
-    height: 29,
+    height: large ? 48 : 23,
     width: double.infinity,
     padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
     decoration: BoxDecoration(
-      color: const Color(0x66160c08),
-      border: Border.all(color: const Color(0xff8d6236)),
+      color: large ? const Color(0x66160c08) : Colors.transparent,
+      border: Border.all(
+        color: large ? const Color(0xff8d6236) : Colors.transparent,
+      ),
       borderRadius: BorderRadius.circular(3),
     ),
     child: equipment.isEmpty
-        ? const Center(
+        ? Center(
             child: Text(
-              'TRANG BI',
+              large ? 'TRANG BI CUA BAN' : '+ TRANG BI',
               style: TextStyle(
                 color: Colors.white38,
-                fontSize: 7,
+                fontSize: large ? 9 : 6,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -1567,8 +1877,8 @@ class _SeatEquipment extends StatelessWidget {
               message: _cardLabel(equipment[index]),
               child: GameCardWidget(
                 card: _publicGameCard(equipment[index]),
-                width: 18,
-                height: 25,
+                width: large ? 34 : 17,
+                height: large ? 43 : 21,
                 isEnabled: false,
               ),
             ),
@@ -2811,8 +3121,24 @@ GameCard _publicGameCard(String cardId) {
     'gun_range_4': 'gun_range_4.png',
     'gun_range_5': 'gun_range_5.png',
   };
+  final cardType = switch (type) {
+    'bang' => CardType.bang,
+    'dodge' => CardType.dodge,
+    'beer' || 'saloon' => CardType.heal,
+    'volcanic' => CardType.doubleBang,
+    'gun_range_2' ||
+    'gun_range_3' ||
+    'gun_range_4' ||
+    'gun_range_5' => CardType.scope,
+    'mustang' || 'appaloosa' => CardType.horse,
+    'panico' => CardType.steal,
+    'cat_balou' => CardType.destroy,
+    'duello' => CardType.duel,
+    'dynamite' => CardType.explosion,
+    _ => CardType.smoke,
+  };
   return GameCard(
-    CardType.bang,
+    cardType,
     id: cardId,
     rank: rank,
     suit: suit,
