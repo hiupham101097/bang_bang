@@ -1290,8 +1290,8 @@ class _RoundBattleTable extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, size) {
           final center = Offset(size.maxWidth / 2, size.maxHeight * .42);
-          final radiusX = size.maxWidth * .405;
-          final radiusY = math.max(96.0, (size.maxHeight - 180) * .36);
+          final radiusX = size.maxWidth * .445;
+          final radiusY = math.max(104.0, (size.maxHeight - 180) * .39);
           return Stack(
             children: [
               const Positioned.fill(
@@ -1335,8 +1335,10 @@ class _RoundBattleTable extends StatelessWidget {
                 final angle =
                     -math.pi / 2 +
                     (2 * math.pi * entry.key / room.members.length);
-                final left = center.dx + math.cos(angle) * radiusX - 58;
-                final top = center.dy + math.sin(angle) * radiusY - 38;
+                final rawLeft = center.dx + math.cos(angle) * radiusX - 61;
+                final rawTop = center.dy + math.sin(angle) * radiusY - 48;
+                final left = rawLeft.clamp(6.0, size.maxWidth - 128.0);
+                final top = rawTop.clamp(38.0, size.maxHeight - 194.0);
                 final member = entry.value;
                 return Positioned(
                   left: left,
@@ -1445,9 +1447,9 @@ class _RoundSeat extends StatelessWidget {
   final bool active;
   @override
   Widget build(BuildContext context) => Container(
-    width: 116,
-    constraints: const BoxConstraints(minHeight: 72),
-    padding: const EdgeInsets.all(5),
+    width: 122,
+    height: 96,
+    padding: const EdgeInsets.all(4),
     decoration: BoxDecoration(
       color: const Color(0xdd2c190f),
       border: Border.all(
@@ -1456,67 +1458,121 @@ class _RoundSeat extends StatelessWidget {
       ),
       borderRadius: BorderRadius.circular(7),
     ),
-    child: Row(
+    child: Column(
       children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: SizedBox(
-            width: 38,
-            height: 54,
-            child: Image.asset(
-              _battleCharacterAsset(member.characterId),
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => const ColoredBox(
-                color: Color(0xffc9984d),
-                child: Icon(Icons.person, color: Color(0xff26140c)),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 5),
         Expanded(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Text(
-                member.displayName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 10,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: SizedBox(
+                  width: 34,
+                  height: 49,
+                  child: Image.asset(
+                    _battleCharacterAsset(member.characterId),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const ColoredBox(
+                      color: Color(0xffc9984d),
+                      child: Icon(Icons.person, color: Color(0xff26140c)),
+                    ),
+                  ),
                 ),
               ),
-              Text(
-                '${member.health}/${member.maxHealth} MAU · ${member.cardCount} BAI',
-                style: const TextStyle(color: Color(0xffffd272), fontSize: 8),
-              ),
-              if (member.equipment.isNotEmpty)
-                Text(
-                  member.equipment.map(_cardLabel).join(' · '),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white70, fontSize: 7),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      member.displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 9,
+                      ),
+                    ),
+                    Text(
+                      '${member.health}/${member.maxHealth} MAU',
+                      style: const TextStyle(
+                        color: Color(0xffffd272),
+                        fontSize: 7,
+                      ),
+                    ),
+                    Text(
+                      '${member.cardCount} BAI',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 7,
+                      ),
+                    ),
+                  ],
                 ),
+              ),
+              CircleAvatar(
+                radius: 10,
+                backgroundColor: const Color(0xffc9984d),
+                child: Text(
+                  '${member.health}',
+                  style: const TextStyle(
+                    color: Color(0xff26140c),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 8,
+                  ),
+                ),
+              ),
             ],
           ),
         ),
-        CircleAvatar(
-          radius: 11,
-          backgroundColor: const Color(0xffc9984d),
-          child: Text(
-            '${member.health}',
-            style: const TextStyle(
-              color: Color(0xff26140c),
-              fontWeight: FontWeight.w900,
-              fontSize: 9,
-            ),
-          ),
-        ),
+        const SizedBox(height: 3),
+        _SeatEquipment(equipment: member.equipment),
       ],
     ),
+  );
+}
+
+class _SeatEquipment extends StatelessWidget {
+  const _SeatEquipment({required this.equipment});
+
+  final List<String> equipment;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 29,
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+    decoration: BoxDecoration(
+      color: const Color(0x66160c08),
+      border: Border.all(color: const Color(0xff8d6236)),
+      borderRadius: BorderRadius.circular(3),
+    ),
+    child: equipment.isEmpty
+        ? const Center(
+            child: Text(
+              'TRANG BI',
+              style: TextStyle(
+                color: Colors.white38,
+                fontSize: 7,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          )
+        : ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: equipment.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 3),
+            itemBuilder: (context, index) => Tooltip(
+              message: _cardLabel(equipment[index]),
+              child: GameCardWidget(
+                card: _publicGameCard(equipment[index]),
+                width: 18,
+                height: 25,
+                isEnabled: false,
+              ),
+            ),
+          ),
   );
 }
 
