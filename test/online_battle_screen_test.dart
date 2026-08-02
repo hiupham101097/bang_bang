@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bangbang/data/online_room_repository.dart';
+import 'package:bangbang/card_effect_overlay.dart';
 import 'package:bangbang/domain/online_models.dart';
 import 'package:bangbang/game_card_widget.dart';
 import 'package:bangbang/game_engine.dart';
@@ -27,6 +28,7 @@ void main() {
       expect(find.byType(SingleChildScrollView), findsNothing);
       expect(find.byType(GridView), findsNothing);
       expect(find.text('+ TRANG BI'), findsNothing);
+      expect(find.text('TRANG BI'), findsNWidgets(7));
       expect(find.byTooltip('VOLCANIC 10 SPADE'), findsOneWidget);
       final verticalLists = tester
           .widgetList<ListView>(find.byType(ListView))
@@ -103,9 +105,15 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('NE'), findsOneWidget);
-    expect(find.text('NHAN DAN'), findsOneWidget);
-    expect(find.textContaining('Phản ứng: 10 giây'), findsOneWidget);
+    expect(find.byType(DodgeEffectOverlay), findsOneWidget);
+    expect(find.text('DÙNG'), findsOneWidget);
+    expect(find.text('BỎ QUA'), findsWidgets);
+    expect(find.textContaining('Phản ứng: 10 giây'), findsWidgets);
+
+    await tester.tap(find.text('DÙNG'));
+    await tester.pump();
+    expect(repository.lastActionName, 'respondToAction');
+    expect(repository.lastPayload?['cardId'], 'dodge_2_heart');
   });
 }
 

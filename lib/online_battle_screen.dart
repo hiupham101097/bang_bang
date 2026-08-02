@@ -931,53 +931,131 @@ class OnlineBattleScreen extends StatelessWidget {
             final dodges = hand
                 .where((card) => card.startsWith('dodge_'))
                 .toList();
-            final bangs = hand
-                .where((card) => card.startsWith('bang_'))
-                .toList();
             final requiredDodges = (action['requiredDodges'] as num? ?? 1)
                 .toInt();
+            if (type == 'bang') {
+              final availableDodges = dodges.take(requiredDodges).toList();
+              return AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                switchInCurve: Curves.easeOutBack,
+                switchOutCurve: Curves.easeIn,
+                child: SizedBox(
+                  key: ValueKey('${action['id']}_${availableDodges.length}'),
+                  height: isMyResponse ? 124 : 72,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      const IgnorePointer(child: BangEffectOverlay(size: 88)),
+                      if (!isMyResponse)
+                        const Positioned(
+                          bottom: 2,
+                          child: Text(
+                            'DANG CHO PHAN UNG BANG',
+                            style: TextStyle(
+                              color: Color(0xffffd272),
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      if (isMyResponse)
+                        Column(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            SizedBox(
+                              height: 78,
+                              child: availableDodges.isEmpty
+                                  ? const Center(
+                                      child: Text(
+                                        'KHONG CO LA NE',
+                                        style: TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    )
+                                  : Stack(
+                                      alignment: Alignment.center,
+                                      children: [
+                                        const IgnorePointer(
+                                          child: DodgeEffectOverlay(size: 78),
+                                        ),
+                                        for (
+                                          var index = 0;
+                                          index < availableDodges.length;
+                                          index++
+                                        )
+                                          Transform.translate(
+                                            offset: Offset(index * 22, 0),
+                                            child: GameCardWidget(
+                                              card: _publicGameCard(
+                                                availableDodges[index],
+                                              ),
+                                              width: 40,
+                                              height: 70,
+                                              isEnabled: false,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                            ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                _ResponseCountdown(
+                                  deadline: action['responseDeadlineAt'],
+                                  onExpired: () {},
+                                ),
+                                const SizedBox(width: 6),
+                                if (availableDodges.length == requiredDodges)
+                                  FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                    onPressed: () => requiredDodges == 2
+                                        ? _callPayload(
+                                            context,
+                                            'resolveSlabDodge',
+                                            {
+                                              'pendingActionId': action['id'],
+                                              'cardIds': availableDodges,
+                                            },
+                                          )
+                                        : _callPayload(
+                                            context,
+                                            'respondToAction',
+                                            {
+                                              'pendingActionId': action['id'],
+                                              'responseType': 'missed',
+                                              'cardId': availableDodges.first,
+                                            },
+                                          ),
+                                    icon: const Icon(Icons.shield, size: 14),
+                                    label: const Text('DÙNG'),
+                                  ),
+                                const SizedBox(width: 5),
+                                OutlinedButton(
+                                  style: OutlinedButton.styleFrom(
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  onPressed: () => _callPayload(
+                                    context,
+                                    'acceptBangDamage',
+                                    {'pendingActionId': action['id']},
+                                  ),
+                                  child: const Text('BỎ QUA'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            }
             final buttons = <Widget>[
-              if (type == 'bang' && isMyResponse)
-                FilledButton.tonal(
-                  onPressed: () => _callPayload(context, 'acceptBangDamage', {
-                    'pendingActionId': action['id'],
-                  }),
-                  child: const Text('NHAN DAN'),
-                ),
-              if (type == 'bang' && isMyResponse && requiredDodges == 2)
-                FilledButton(
-                  onPressed: dodges.length >= 2
-                      ? () => _callPayload(context, 'resolveSlabDodge', {
-                          'pendingActionId': action['id'],
-                          'cardIds': dodges.take(2).toList(),
-                        })
-                      : null,
-                  child: const Text('DUNG 2 NE'),
-                ),
-              if (type == 'bang' && isMyResponse && requiredDodges < 2)
-                ...dodges.map(
-                  (cardId) => FilledButton(
-                    onPressed: () => _callPayload(context, 'respondToAction', {
-                      'pendingActionId': action['id'],
-                      'responseType': 'missed',
-                      'cardId': cardId,
-                    }),
-                    child: const Text('NE'),
-                  ),
-                ),
-              if (type == 'bang' &&
-                  isMyResponse &&
-                  room.memberFor(playerId)?.characterId == 'calamity_janet')
-                ...bangs.map(
-                  (cardId) => OutlinedButton(
-                    onPressed: () => _callPayload(
-                      context,
-                      'useCalamityJanetDodge',
-                      {'pendingActionId': action['id'], 'cardId': cardId},
-                    ),
-                    child: const Text('BANG->NE'),
-                  ),
-                ),
               if (isMyResponse &&
                   (type == 'gatling' || type == 'indiani' || type == 'duello'))
                 ...hand
@@ -1093,7 +1171,7 @@ class OnlineBattleScreen extends StatelessWidget {
       onTargetedPlay: !canPlay
           ? null
           : (cardId, targetId) =>
-                _playCard(context, cardId, playerId, targetId),
+                _playCard(context, cardId, playerId, targetId, true),
       onJesseDraw: canDraw && activePlayer?.characterId == 'jesse_jones'
           ? (targetId) => _drawTurn(
               context,
@@ -1555,8 +1633,8 @@ class _RoundBattleTableState extends State<_RoundBattleTable> {
                 ),
               ),
               Positioned(
-                left: size.maxWidth * .28,
-                right: size.maxWidth * .28,
+                left: size.maxWidth * .18,
+                right: size.maxWidth * .18,
                 bottom: 140,
                 child: widget.pendingDock,
               ),
@@ -1686,7 +1764,7 @@ class _RoundSeat extends StatelessWidget {
       curve: Curves.easeOutCubic,
       child: SizedBox(
         width: isLocal ? 160 : 84,
-        height: isLocal ? 120 : 64,
+        height: isLocal ? 120 : 82,
         child: Stack(
           clipBehavior: Clip.none,
           children: [
@@ -1712,13 +1790,8 @@ class _RoundSeat extends StatelessWidget {
                     Expanded(
                       child: _SeatIdentity(member: member, large: isLocal),
                     ),
-                    if (isLocal || member.equipment.isNotEmpty) ...[
-                      const SizedBox(height: 3),
-                      _SeatEquipment(
-                        equipment: member.equipment,
-                        large: isLocal,
-                      ),
-                    ],
+                    const SizedBox(height: 3),
+                    _SeatEquipment(equipment: member.equipment, large: isLocal),
                   ],
                 ),
               ),
@@ -1882,7 +1955,7 @@ class _SeatEquipment extends StatelessWidget {
     child: equipment.isEmpty
         ? Center(
             child: Text(
-              'TRANG BI CUA BAN',
+              large ? 'TRANG BI CUA BAN' : 'TRANG BI',
               style: TextStyle(
                 color: Colors.white38,
                 fontSize: large ? 9 : 6,
