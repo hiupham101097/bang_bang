@@ -1,5 +1,49 @@
 import 'package:flutter/material.dart';
 
+class _SpriteSheetFrame extends StatelessWidget {
+  const _SpriteSheetFrame({
+    required this.asset,
+    required this.frame,
+    required this.size,
+  });
+
+  final String asset;
+  final int frame;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final safeFrame = frame.clamp(0, 3);
+    final column = safeFrame % 2;
+    final row = safeFrame ~/ 2;
+    return ClipRect(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Transform.translate(
+          offset: Offset(-column * size, -row * size),
+          child: OverflowBox(
+            alignment: Alignment.topLeft,
+            minWidth: size * 2,
+            maxWidth: size * 2,
+            minHeight: size * 2,
+            maxHeight: size * 2,
+            child: Image.asset(
+              asset,
+              width: size * 2,
+              height: size * 2,
+              fit: BoxFit.fill,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+int _spriteFrame(AnimationController controller) =>
+    (controller.value * 4).floor().clamp(0, 3);
+
 /// Reusable, non-blocking visual effect for a resolved BANG action.
 class BangEffectOverlay extends StatefulWidget {
   const BangEffectOverlay({super.key, this.size = 180});
@@ -23,8 +67,8 @@ class _DodgeEffectOverlayState extends State<DodgeEffectOverlay>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 620),
-  )..repeat(reverse: true);
+    duration: const Duration(milliseconds: 560),
+  )..repeat();
 
   @override
   void dispose() {
@@ -35,16 +79,12 @@ class _DodgeEffectOverlayState extends State<DodgeEffectOverlay>
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: _controller,
-    builder: (context, child) => Transform.translate(
-      offset: Offset((_controller.value - .5) * 24, 0),
-      child: Opacity(opacity: .6 + _controller.value * .4, child: child),
-    ),
-    child: SizedBox(
-      width: widget.size,
-      height: widget.size,
-      child: Image.asset(
-        'assets/images/effects/dodge_sprite.png',
-        fit: BoxFit.contain,
+    builder: (context, _) => Transform.translate(
+      offset: Offset((_controller.value - .5) * 10, 0),
+      child: _SpriteSheetFrame(
+        asset: 'assets/images/effects/dodge_sprite.png',
+        frame: _spriteFrame(_controller),
+        size: widget.size,
       ),
     ),
   );
@@ -149,8 +189,8 @@ class _AreaAttackEffectOverlayState extends State<AreaAttackEffectOverlay>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 520),
-  )..repeat(reverse: true);
+    duration: const Duration(milliseconds: 480),
+  )..repeat();
 
   @override
   void dispose() {
@@ -161,16 +201,12 @@ class _AreaAttackEffectOverlayState extends State<AreaAttackEffectOverlay>
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: _controller,
-    builder: (context, child) => Transform.scale(
+    builder: (context, _) => Transform.scale(
       scale: .9 + _controller.value * .16,
-      child: Opacity(opacity: .65 + _controller.value * .35, child: child),
-    ),
-    child: SizedBox(
-      width: widget.size,
-      height: widget.size,
-      child: Image.asset(
-        'assets/images/effects/area_attack_sprite.png',
-        fit: BoxFit.contain,
+      child: _SpriteSheetFrame(
+        asset: 'assets/images/effects/area_attack_sprite.png',
+        frame: _spriteFrame(_controller),
+        size: widget.size,
       ),
     ),
   );
@@ -180,8 +216,8 @@ class _BangEffectOverlayState extends State<BangEffectOverlay>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 720),
-  )..repeat(reverse: true);
+    duration: const Duration(milliseconds: 440),
+  )..repeat();
 
   @override
   void dispose() {
@@ -192,19 +228,15 @@ class _BangEffectOverlayState extends State<BangEffectOverlay>
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: _controller,
-    builder: (context, child) => Opacity(
-      opacity: 0.65 + _controller.value * 0.35,
+    builder: (context, _) => Opacity(
+      opacity: 0.72 + _controller.value * 0.28,
       child: Transform.scale(
-        scale: 0.82 + _controller.value * 0.22,
-        child: child,
-      ),
-    ),
-    child: SizedBox(
-      width: widget.size,
-      height: widget.size,
-      child: Image.asset(
-        'assets/images/effects/bang_sprite.png',
-        fit: BoxFit.contain,
+        scale: 0.9 + _controller.value * 0.12,
+        child: _SpriteSheetFrame(
+          asset: 'assets/images/effects/bang_sprite.png',
+          frame: _spriteFrame(_controller),
+          size: widget.size,
+        ),
       ),
     ),
   );

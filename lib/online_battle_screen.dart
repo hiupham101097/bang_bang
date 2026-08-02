@@ -918,11 +918,15 @@ class OnlineBattleScreen extends StatelessWidget {
       return Container(
         width: double.infinity,
         margin: EdgeInsets.zero,
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        padding: type == 'bang'
+            ? EdgeInsets.zero
+            : const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(
-          color: const Color(0xdd24140d),
+          color: type == 'bang' ? Colors.transparent : const Color(0xdd24140d),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xff9a6a35)),
+          border: type == 'bang'
+              ? null
+              : Border.all(color: const Color(0xff9a6a35)),
         ),
         child: StreamBuilder<List<String>>(
           stream: repository.watchHand(room.id),
@@ -941,11 +945,11 @@ class OnlineBattleScreen extends StatelessWidget {
                 switchOutCurve: Curves.easeIn,
                 child: SizedBox(
                   key: ValueKey('${action['id']}_${availableDodges.length}'),
-                  height: isMyResponse ? 124 : 72,
+                  height: isMyResponse ? 174 : 92,
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      const IgnorePointer(child: BangEffectOverlay(size: 88)),
+                      const IgnorePointer(child: BangEffectOverlay(size: 132)),
                       if (!isMyResponse)
                         const Positioned(
                           bottom: 2,
@@ -959,94 +963,114 @@ class OnlineBattleScreen extends StatelessWidget {
                           ),
                         ),
                       if (isMyResponse)
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        Stack(
+                          alignment: Alignment.center,
                           children: [
-                            SizedBox(
-                              height: 78,
-                              child: availableDodges.isEmpty
-                                  ? const Center(
-                                      child: Text(
-                                        'KHONG CO LA NE',
-                                        style: TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    )
-                                  : Stack(
-                                      alignment: Alignment.center,
-                                      children: [
-                                        const IgnorePointer(
-                                          child: DodgeEffectOverlay(size: 78),
-                                        ),
-                                        for (
-                                          var index = 0;
-                                          index < availableDodges.length;
-                                          index++
-                                        )
-                                          Transform.translate(
-                                            offset: Offset(index * 22, 0),
-                                            child: GameCardWidget(
-                                              card: _publicGameCard(
-                                                availableDodges[index],
-                                              ),
-                                              width: 40,
-                                              height: 70,
-                                              isEnabled: false,
-                                            ),
-                                          ),
-                                      ],
+                            if (availableDodges.isNotEmpty) ...[
+                              const IgnorePointer(
+                                child: DodgeEffectOverlay(size: 156),
+                              ),
+                              for (
+                                var index = 0;
+                                index < availableDodges.length;
+                                index++
+                              )
+                                Transform.translate(
+                                  offset: Offset(index * 18, 0),
+                                  child: GameCardWidget(
+                                    card: _publicGameCard(
+                                      availableDodges[index],
                                     ),
+                                    width: 104,
+                                    height: 164,
+                                    isEnabled: false,
+                                  ),
+                                ),
+                            ] else
+                              const Text(
+                                'KHONG CO LA NE',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            Positioned(
+                              top: 8,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: Color(0xdd160c08),
+                                  borderRadius: BorderRadius.all(
+                                    Radius.circular(4),
+                                  ),
+                                ),
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 2,
+                                  ),
+                                  child: _ResponseCountdown(
+                                    deadline: action['responseDeadlineAt'],
+                                    onExpired: () {},
+                                  ),
+                                ),
+                              ),
                             ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                _ResponseCountdown(
-                                  deadline: action['responseDeadlineAt'],
-                                  onExpired: () {},
-                                ),
-                                const SizedBox(width: 6),
-                                if (availableDodges.length == requiredDodges)
-                                  FilledButton.icon(
-                                    style: FilledButton.styleFrom(
-                                      visualDensity: VisualDensity.compact,
+                            Positioned(
+                              bottom: 8,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (availableDodges.length == requiredDodges)
+                                    FilledButton(
+                                      style: FilledButton.styleFrom(
+                                        minimumSize: const Size(46, 26),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                        ),
+                                        visualDensity: VisualDensity.compact,
+                                        textStyle: const TextStyle(fontSize: 8),
+                                      ),
+                                      onPressed: () => requiredDodges == 2
+                                          ? _callPayload(
+                                              context,
+                                              'resolveSlabDodge',
+                                              {
+                                                'pendingActionId': action['id'],
+                                                'cardIds': availableDodges,
+                                              },
+                                            )
+                                          : _callPayload(
+                                              context,
+                                              'respondToAction',
+                                              {
+                                                'pendingActionId': action['id'],
+                                                'responseType': 'missed',
+                                                'cardId': availableDodges.first,
+                                              },
+                                            ),
+                                      child: const Text('DÙNG'),
                                     ),
-                                    onPressed: () => requiredDodges == 2
-                                        ? _callPayload(
-                                            context,
-                                            'resolveSlabDodge',
-                                            {
-                                              'pendingActionId': action['id'],
-                                              'cardIds': availableDodges,
-                                            },
-                                          )
-                                        : _callPayload(
-                                            context,
-                                            'respondToAction',
-                                            {
-                                              'pendingActionId': action['id'],
-                                              'responseType': 'missed',
-                                              'cardId': availableDodges.first,
-                                            },
-                                          ),
-                                    icon: const Icon(Icons.shield, size: 14),
-                                    label: const Text('DÙNG'),
+                                  const SizedBox(width: 3),
+                                  OutlinedButton(
+                                    style: OutlinedButton.styleFrom(
+                                      minimumSize: const Size(48, 26),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 5,
+                                      ),
+                                      backgroundColor: const Color(0xdd160c08),
+                                      visualDensity: VisualDensity.compact,
+                                      textStyle: const TextStyle(fontSize: 8),
+                                    ),
+                                    onPressed: () => _callPayload(
+                                      context,
+                                      'acceptBangDamage',
+                                      {'pendingActionId': action['id']},
+                                    ),
+                                    child: const Text('BỎ QUA'),
                                   ),
-                                const SizedBox(width: 5),
-                                OutlinedButton(
-                                  style: OutlinedButton.styleFrom(
-                                    visualDensity: VisualDensity.compact,
-                                  ),
-                                  onPressed: () => _callPayload(
-                                    context,
-                                    'acceptBangDamage',
-                                    {'pendingActionId': action['id']},
-                                  ),
-                                  child: const Text('BỎ QUA'),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ],
                         ),
@@ -1763,7 +1787,7 @@ class _RoundSeat extends StatelessWidget {
       duration: const Duration(milliseconds: 180),
       curve: Curves.easeOutCubic,
       child: SizedBox(
-        width: isLocal ? 160 : 84,
+        width: isLocal ? 160 : 96,
         height: isLocal ? 120 : 82,
         child: Stack(
           clipBehavior: Clip.none,
@@ -1895,7 +1919,7 @@ class _SeatIdentity extends StatelessWidget {
               ),
             ),
             Text(
-              '${member.health}/${member.maxHealth} MAU',
+              '${member.health}/${member.maxHealth}  ♥',
               style: TextStyle(
                 color: const Color(0xffffd272),
                 fontSize: large ? 9 : 6.5,
@@ -1918,18 +1942,19 @@ class _SeatIdentity extends StatelessWidget {
           ],
         ),
       ),
-      CircleAvatar(
-        radius: large ? 13 : 9,
-        backgroundColor: const Color(0xffc9984d),
-        child: Text(
-          '${member.health}',
-          style: TextStyle(
-            color: const Color(0xff26140c),
-            fontWeight: FontWeight.w900,
-            fontSize: large ? 10 : 8,
+      if (large)
+        CircleAvatar(
+          radius: 13,
+          backgroundColor: const Color(0xffc9984d),
+          child: Text(
+            '${member.health}',
+            style: const TextStyle(
+              color: Color(0xff26140c),
+              fontWeight: FontWeight.w900,
+              fontSize: 10,
+            ),
           ),
         ),
-      ),
     ],
   );
 }
@@ -1947,22 +1972,22 @@ class _SeatEquipment extends StatelessWidget {
     padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
     decoration: BoxDecoration(
       color: large ? const Color(0x66160c08) : Colors.transparent,
-      border: Border.all(
-        color: large ? const Color(0xff8d6236) : Colors.transparent,
-      ),
+      border: Border.all(color: const Color(0xff8d6236)),
       borderRadius: BorderRadius.circular(3),
     ),
     child: equipment.isEmpty
-        ? Center(
-            child: Text(
-              large ? 'TRANG BI CUA BAN' : 'TRANG BI',
-              style: TextStyle(
-                color: Colors.white38,
-                fontSize: large ? 9 : 6,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          )
+        ? large
+              ? const Center(
+                  child: Text(
+                    'TRANG BI CUA BAN',
+                    style: TextStyle(
+                      color: Colors.white38,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink()
         : ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: equipment.length,

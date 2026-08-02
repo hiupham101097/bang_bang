@@ -234,7 +234,9 @@ export class BangBangMatch extends DurableObject<Env> {
       }
       await this.save(state);
     } else if (state.status === "playing" && state.phase !== "waiting_response" && state.turnDeadline && Date.now() >= state.turnDeadline) {
-      await this.resolveTurnTimeout(state);
+      const current = state.players.find((player) => player.id === state.currentTurnPlayerId);
+      if (current?.bot && state.phase === "turn_start") await this.runBotTurn(state);
+      else await this.resolveTurnTimeout(state);
       await this.save(state);
     }
   }
@@ -790,8 +792,10 @@ export class BangBangMatch extends DurableObject<Env> {
     if (nextIndex <= startIndex) state.roundNumber = (state.roundNumber ?? 1) + 1;
     state.turnOrder = order; state.currentPlayerIndex = nextIndex; state.currentTurnPlayerId = order[nextIndex];
     state.turnNumber++; state.bangUsedThisTurn = 0; state.phase = "turn_start"; state.pendingBang = undefined;
-    state.publicLog.push(reason); state.turnDeadline = Date.now() + state.turnDurationSeconds * 1000;
-    void this.ctx.storage.setAlarm(state.turnDeadline); await this.runBotTurn(state);
+    state.publicLog.push(reason);
+    const nextPlayer = this.player(state, state.currentTurnPlayerId);
+    state.turnDeadline = Date.now() + (nextPlayer.bot ? 250 : state.turnDurationSeconds * 1000);
+    void this.ctx.storage.setAlarm(state.turnDeadline);
   }
   private async runBotTurn(state: MatchState): Promise<void> {
     const bot = state.players.find((player) => player.id === state.currentTurnPlayerId);
@@ -801,7 +805,8 @@ export class BangBangMatch extends DurableObject<Env> {
     const beer = bot.hand.find((card) => typeOf(card) === "beer");
     if (beer && bot.health < bot.maxHealth) this.play(state, bot.id, beer, "");
     const bang = bot.hand.find((card) => typeOf(card) === "bang");
-    const target = state.players.find((player) => player.alive && !player.bot && player.id !== bot.id && this.distance(state, bot, player) <= bot.attackRange);
+    const targets = shuffle(state.players.filter((player) => player.alive && player.id !== bot.id && this.distance(state, bot, player) <= bot.attackRange));
+    const target = targets[0];
     if (bang && target && String(state.phase) === "play_phase") this.play(state, bot.id, bang, target.id);
     if (String(state.phase) === "play_phase") await this.endTurn(state, bot.id);
     if (String(state.phase) === "discard_phase" && state.currentTurnPlayerId === bot.id) {
