@@ -947,11 +947,10 @@ class OnlineBattleScreen extends StatelessWidget {
               if (type == 'bang' && isMyResponse && requiredDodges == 2)
                 FilledButton(
                   onPressed: dodges.length >= 2
-                      ? () => _resolveSlabDodge(
-                          context,
-                          action['id'] as String,
-                          dodges,
-                        )
+                      ? () => _callPayload(context, 'resolveSlabDodge', {
+                          'pendingActionId': action['id'],
+                          'cardIds': dodges.take(2).toList(),
+                        })
                       : null,
                   child: const Text('DUNG 2 NE'),
                 ),
@@ -1026,15 +1025,18 @@ class OnlineBattleScreen extends StatelessWidget {
                   ),
                 ),
               if (type == 'kit_carlson' && choices.length == 3)
-                FilledButton.tonal(
-                  onPressed: isMyActor
-                      ? () => _chooseKitCarlson(
-                          context,
-                          action['id'] as String,
-                          choices,
-                        )
-                      : null,
-                  child: const Text('KIT: CHON 2'),
+                ...choices.map(
+                  (returnedCard) => OutlinedButton(
+                    onPressed: isMyActor
+                        ? () => _callPayload(context, 'chooseKitCarlson', {
+                            'actionId': action['id'],
+                            'cardIds': choices
+                                .where((card) => card != returnedCard)
+                                .toList(),
+                          })
+                        : null,
+                    child: Text('TRA ${_cardLabel(returnedCard)}'),
+                  ),
                 ),
             ];
             return Wrap(
@@ -1475,8 +1477,8 @@ class _RoundBattleTableState extends State<_RoundBattleTable> {
               Positioned(
                 left: size.maxWidth * .25,
                 right: size.maxWidth * .25,
-                bottom: 2,
-                height: 100,
+                bottom: 8,
+                height: 108,
                 child: StreamBuilder<List<String>>(
                   stream: widget.repository.watchHand(widget.room.id),
                   builder: (context, snapshot) => _FannedBattleHand(
@@ -1488,7 +1490,7 @@ class _RoundBattleTableState extends State<_RoundBattleTable> {
                 ),
               ),
               Positioned(
-                bottom: 104,
+                bottom: 116,
                 left: 0,
                 right: 0,
                 child: Row(
@@ -1632,16 +1634,30 @@ class _TableDeck extends StatelessWidget {
     height: 60,
     alignment: Alignment.center,
     decoration: BoxDecoration(
-      color: const Color(0xffead9a5),
+      color: const Color(0xff3b2014),
       border: Border.all(color: const Color(0xffffc451), width: 2),
       borderRadius: BorderRadius.circular(5),
+      image: const DecorationImage(
+        image: AssetImage('assets/images/bang_bang_logo.png'),
+        fit: BoxFit.contain,
+        opacity: .32,
+      ),
     ),
-    child: Text(
-      label,
-      style: const TextStyle(
-        color: Color(0xff26140c),
-        fontWeight: FontWeight.w900,
-        fontSize: 11,
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xaa160c08),
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xffffd272),
+            fontWeight: FontWeight.w900,
+            fontSize: 10,
+          ),
+        ),
       ),
     ),
   );
@@ -1669,8 +1685,8 @@ class _RoundSeat extends StatelessWidget {
       duration: const Duration(milliseconds: 180),
       curve: Curves.easeOutCubic,
       child: SizedBox(
-        width: isLocal ? 170 : 104,
-        height: isLocal ? 126 : 82,
+        width: isLocal ? 160 : 84,
+        height: isLocal ? 120 : 64,
         child: Stack(
           clipBehavior: Clip.none,
           children: [
@@ -1680,7 +1696,7 @@ class _RoundSeat extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: isLocal
                       ? const Color(0xdd2c190f)
-                      : const Color(0xc42c190f),
+                      : const Color(0x992c190f),
                   border: Border.all(
                     color: canTarget
                         ? const Color(0xffff453a)
@@ -1696,8 +1712,13 @@ class _RoundSeat extends StatelessWidget {
                     Expanded(
                       child: _SeatIdentity(member: member, large: isLocal),
                     ),
-                    const SizedBox(height: 3),
-                    _SeatEquipment(equipment: member.equipment, large: isLocal),
+                    if (isLocal || member.equipment.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      _SeatEquipment(
+                        equipment: member.equipment,
+                        large: isLocal,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1707,8 +1728,8 @@ class _RoundSeat extends StatelessWidget {
                 top: 4,
                 right: 4,
                 child: Container(
-                  width: 34,
-                  height: 34,
+                  width: isLocal ? 34 : 26,
+                  height: isLocal ? 34 : 26,
                   decoration: const BoxDecoration(
                     color: Color(0xffc62828),
                     shape: BoxShape.circle,
@@ -1716,10 +1737,10 @@ class _RoundSeat extends StatelessWidget {
                       BoxShadow(color: Colors.black54, blurRadius: 6),
                     ],
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.gps_fixed,
                     color: Colors.white,
-                    size: 24,
+                    size: isLocal ? 24 : 18,
                   ),
                 ),
               ),
@@ -1772,8 +1793,8 @@ class _SeatIdentity extends StatelessWidget {
       ClipRRect(
         borderRadius: BorderRadius.circular(3),
         child: SizedBox(
-          width: large ? 46 : 30,
-          height: large ? 62 : 43,
+          width: large ? 44 : 24,
+          height: large ? 58 : 35,
           child: Image.asset(
             _battleCharacterAsset(member.characterId),
             fit: BoxFit.cover,
@@ -1797,26 +1818,26 @@ class _SeatIdentity extends StatelessWidget {
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w800,
-                fontSize: large ? 11 : 9,
+                fontSize: large ? 11 : 8,
               ),
             ),
             Text(
               '${member.health}/${member.maxHealth} MAU',
               style: TextStyle(
                 color: const Color(0xffffd272),
-                fontSize: large ? 9 : 7,
+                fontSize: large ? 9 : 6.5,
               ),
             ),
             Row(
               children: [
-                Icon(Icons.style, color: Colors.white70, size: large ? 12 : 9),
+                Icon(Icons.style, color: Colors.white70, size: large ? 12 : 8),
                 const SizedBox(width: 2),
                 Text(
                   '${member.cardCount}',
                   style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w900,
-                    fontSize: large ? 10 : 8,
+                    fontSize: large ? 10 : 7,
                   ),
                 ),
               ],
@@ -1825,7 +1846,7 @@ class _SeatIdentity extends StatelessWidget {
         ),
       ),
       CircleAvatar(
-        radius: large ? 13 : 10,
+        radius: large ? 13 : 9,
         backgroundColor: const Color(0xffc9984d),
         child: Text(
           '${member.health}',
@@ -1848,7 +1869,7 @@ class _SeatEquipment extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    height: large ? 48 : 23,
+    height: large ? 46 : 24,
     width: double.infinity,
     padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
     decoration: BoxDecoration(
@@ -1861,7 +1882,7 @@ class _SeatEquipment extends StatelessWidget {
     child: equipment.isEmpty
         ? Center(
             child: Text(
-              large ? 'TRANG BI CUA BAN' : '+ TRANG BI',
+              'TRANG BI CUA BAN',
               style: TextStyle(
                 color: Colors.white38,
                 fontSize: large ? 9 : 6,

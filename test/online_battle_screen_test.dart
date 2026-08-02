@@ -26,7 +26,7 @@ void main() {
       expect(find.byType(AppBar), findsNothing);
       expect(find.byType(SingleChildScrollView), findsNothing);
       expect(find.byType(GridView), findsNothing);
-      expect(find.text('+ TRANG BI'), findsNWidgets(7));
+      expect(find.text('+ TRANG BI'), findsNothing);
       expect(find.byTooltip('VOLCANIC 10 SPADE'), findsOneWidget);
       final verticalLists = tester
           .widgetList<ListView>(find.byType(ListView))
