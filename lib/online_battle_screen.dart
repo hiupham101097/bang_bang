@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'audio_service.dart';
 import 'card_effect_overlay.dart';
@@ -827,9 +828,9 @@ class OnlineBattleScreen extends StatelessWidget {
         }
 
         bool validSelection() {
-          final sidCards = picks.where(
-            (card) => !beerAllowed || !card.startsWith('beer_'),
-          ).length;
+          final sidCards = picks
+              .where((card) => !beerAllowed || !card.startsWith('beer_'))
+              .length;
           return healing() == requiredHealth && (!isSid || sidCards.isEven);
         }
 
@@ -1581,6 +1582,21 @@ class _RoundBattleTableState extends State<_RoundBattleTable> {
   String? _selectedCardId;
   bool _choosingJesseTarget = false;
 
+  @override
+  void initState() {
+    super.initState();
+    SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+  }
+
+  @override
+  void dispose() {
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    super.dispose();
+  }
+
   bool get _isTargeting {
     final cardId = _selectedCardId;
     if (cardId == null) return false;
@@ -1644,217 +1660,260 @@ class _RoundBattleTableState extends State<_RoundBattleTable> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: const Color(0xff160c08),
-    body: SafeArea(
-      child: LayoutBuilder(
-        builder: (context, size) {
-          final localPlayer = widget.room.memberFor(widget.playerId ?? '');
-          final opponents =
-              widget.room.members
-                  .where((member) => member.id != widget.playerId)
-                  .toList()
-                ..sort((left, right) {
-                  final localSeat = localPlayer?.seat ?? 0;
-                  final count = widget.room.members.length;
-                  final leftOffset = (left.seat - localSeat + count) % count;
-                  final rightOffset = (right.seat - localSeat + count) % count;
-                  return leftOffset.compareTo(rightOffset);
-                });
-          const opponentPoints = <Offset>[
-            Offset(.89, .43),
-            Offset(.88, .16),
-            Offset(.69, .14),
-            Offset(.47, .14),
-            Offset(.25, .14),
-            Offset(.03, .16),
-            Offset(.02, .43),
-          ];
-          final center = Offset(size.maxWidth / 2, size.maxHeight * .42);
-          return Stack(
-            children: [
-              const Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    image: DecorationImage(
-                      image: AssetImage('assets/images/room_table.png'),
-                      fit: BoxFit.cover,
-                    ),
+    body: BangScenicBackground(
+      asset: 'assets/images/room_table.png',
+      overlay: .30,
+      child: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, size) {
+            final landscape = size.maxWidth > size.maxHeight;
+            final localPlayer = widget.room.memberFor(widget.playerId ?? '');
+            final opponents =
+                widget.room.members
+                    .where((member) => member.id != widget.playerId)
+                    .toList()
+                  ..sort((left, right) {
+                    final localSeat = localPlayer?.seat ?? 0;
+                    final count = widget.room.members.length;
+                    final leftOffset = (left.seat - localSeat + count) % count;
+                    final rightOffset =
+                        (right.seat - localSeat + count) % count;
+                    return leftOffset.compareTo(rightOffset);
+                  });
+            const opponentPoints = <Offset>[
+              Offset(.89, .43),
+              Offset(.88, .16),
+              Offset(.69, .14),
+              Offset(.47, .14),
+              Offset(.25, .14),
+              Offset(.03, .16),
+              Offset(.02, .43),
+            ];
+            final center = Offset(size.maxWidth / 2, size.maxHeight * .42);
+            return Stack(
+              children: [
+                Positioned.fill(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 50, 16, 128),
+                    child: BangTableFelt(child: const SizedBox.expand()),
                   ),
                 ),
-              ),
-              Positioned(
-                top: 8,
-                left: 0,
-                right: 0,
-                child: Text(
-                  widget.activePlayer?.id == widget.playerId
-                      ? 'DEN LUOT CUA BAN'
-                      : 'LUOT CUA ${widget.activePlayer?.displayName ?? ''}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Color(0xffffd272),
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              Positioned(
-                left: center.dx - 44,
-                top: center.dy - 20,
-                child: Row(
-                  children: const [
-                    _TableDeck(label: 'RUT'),
-                    SizedBox(width: 4),
-                    _TableDeck(label: 'BO'),
-                  ],
-                ),
-              ),
-              ...opponents.asMap().entries.map((entry) {
-                final point = opponentPoints[entry.key];
-                final member = entry.value;
-                return Positioned(
-                  left: (point.dx * size.maxWidth).clamp(
-                    6.0,
-                    size.maxWidth - 128,
-                  ),
-                  top: point.dy * size.maxHeight,
-                  child: _RoundSeat(
-                    member: member,
-                    active: member.id == widget.room.currentTurnPlayerId,
-                    canTarget: _canTarget(member),
-                    onTarget: () => _fireAt(member),
-                  ),
-                );
-              }),
-              if (localPlayer != null)
                 Positioned(
-                  right: 10,
+                  top: 10,
+                  left: 48,
+                  right: 48,
+                  child: BangPanel(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    child: Text(
+                      widget.activePlayer?.id == widget.playerId
+                          ? 'ĐẾN LƯỢT CỦA BẠN'
+                          : 'LƯỢT CỦA ${widget.activePlayer?.displayName ?? ''}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: BangColors.paper,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .7,
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: center.dx - 64,
+                  top: center.dy - 20,
+                  child: Row(
+                    children: const [
+                      _TableDeck(label: 'RUT'),
+                      SizedBox(width: 10),
+                      _TableDeck(label: 'DANH'),
+                      SizedBox(width: 10),
+                      _TableDeck(label: 'BO'),
+                    ],
+                  ),
+                ),
+                ...opponents.asMap().entries.map((entry) {
+                  final point = opponentPoints[entry.key];
+                  final member = entry.value;
+                  return Positioned(
+                    left: (point.dx * size.maxWidth).clamp(
+                      6.0,
+                      size.maxWidth - 128,
+                    ),
+                    top: point.dy * size.maxHeight,
+                    child: _RoundSeat(
+                      member: member,
+                      active: member.id == widget.room.currentTurnPlayerId,
+                      canTarget: _canTarget(member),
+                      onTarget: () => _fireAt(member),
+                    ),
+                  );
+                }),
+                if (localPlayer != null)
+                  Positioned(
+                    left: landscape ? 10 : null,
+                    right: landscape ? null : 10,
+                    bottom: 8,
+                    child: _RoundSeat(
+                      member: localPlayer,
+                      active: localPlayer.id == widget.room.currentTurnPlayerId,
+                      isLocal: true,
+                    ),
+                  ),
+                Positioned(
+                  left: 12,
+                  right: 12,
+                  bottom: 154,
+                  child: Center(
+                    child: BangPanel(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      child: Text(
+                        _choosingJesseTarget
+                            ? 'JESSE JONES: CHỌN NGƯỜI ĐỂ LẤY 1 LÁ'
+                            : _isTargeting
+                            ? 'CHỌN MỤC TIÊU TRONG TẦM BẮN'
+                            : widget.room.publicLog.isEmpty
+                            ? _phaseLabel(widget.room.phase)
+                            : widget.room.publicLog.last,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: BangColors.paper,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: landscape ? size.maxWidth * .21 : size.maxWidth * .25,
+                  right: landscape ? size.maxWidth * .25 : size.maxWidth * .25,
                   bottom: 8,
-                  child: _RoundSeat(
-                    member: localPlayer,
-                    active: localPlayer.id == widget.room.currentTurnPlayerId,
-                    isLocal: true,
+                  height: 108,
+                  child: StreamBuilder<List<String>>(
+                    stream: widget.repository.watchHand(widget.room.id),
+                    builder: (context, snapshot) => _FannedBattleHand(
+                      cards: snapshot.data ?? const [],
+                      selectedCardId: _selectedCardId,
+                      enabled: widget.onPlay != null,
+                      onTap: _selectCard,
+                    ),
                   ),
                 ),
-              Positioned(
-                left: 12,
-                right: 12,
-                bottom: 154,
-                child: Text(
-                  _choosingJesseTarget
-                      ? 'JESSE JONES: CHON NGUOI DE LAY 1 LA'
-                      : _isTargeting
-                      ? 'CHON MUC TIEU TRONG TAM BAN'
-                      : widget.room.publicLog.isEmpty
-                      ? _phaseLabel(widget.room.phase)
-                      : widget.room.publicLog.last,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white70),
-                ),
-              ),
-              Positioned(
-                left: size.maxWidth * .25,
-                right: size.maxWidth * .25,
-                bottom: 8,
-                height: 108,
-                child: StreamBuilder<List<String>>(
-                  stream: widget.repository.watchHand(widget.room.id),
-                  builder: (context, snapshot) => _FannedBattleHand(
-                    cards: snapshot.data ?? const [],
-                    selectedCardId: _selectedCardId,
-                    enabled: widget.onPlay != null,
-                    onTap: _selectCard,
+                Positioned(
+                  bottom: landscape ? 12 : 116,
+                  right: landscape ? 12 : null,
+                  left: landscape ? null : 0,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: BangPanel(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          FilledButton(
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size(74, 32),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            onPressed: widget.canDraw ? widget.onDraw : null,
+                            child: const Text('RUT 2'),
+                          ),
+                          if (widget.onJesseDraw != null) ...[
+                            const SizedBox(width: 6),
+                            FilledButton.tonalIcon(
+                              style: FilledButton.styleFrom(
+                                minimumSize: const Size(76, 32),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              onPressed: () => setState(
+                                () => _choosingJesseTarget =
+                                    !_choosingJesseTarget,
+                              ),
+                              icon: const Icon(Icons.person_search, size: 16),
+                              label: const Text('CUOP 1'),
+                            ),
+                          ],
+                          if (widget.onSid != null) ...[
+                            const SizedBox(width: 6),
+                            FilledButton.tonal(
+                              style: FilledButton.styleFrom(
+                                minimumSize: const Size(76, 32),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              onPressed: widget.onSid,
+                              child: const Text('SID +1'),
+                            ),
+                          ],
+                          const SizedBox(width: 10),
+                          if (_selectedCardId != null && !_isTargeting) ...[
+                            FilledButton.icon(
+                              style: FilledButton.styleFrom(
+                                minimumSize: const Size(78, 32),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                ),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              onPressed: _playSelected,
+                              icon: Icon(
+                                _isEquipmentCard(_selectedCardId!)
+                                    ? Icons.add_to_photos_outlined
+                                    : Icons.play_arrow,
+                              ),
+                              label: Text(
+                                _isEquipmentCard(_selectedCardId!)
+                                    ? 'DAT BAI'
+                                    : 'DANH',
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                          ],
+                          FilledButton(
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size(86, 32),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            onPressed: widget.canPlay ? widget.onEndTurn : null,
+                            child: const Text('HET LUOT'),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              Positioned(
-                bottom: 116,
-                left: 0,
-                right: 0,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(74, 32),
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      onPressed: widget.canDraw ? widget.onDraw : null,
-                      child: const Text('RUT 2'),
-                    ),
-                    if (widget.onJesseDraw != null) ...[
-                      const SizedBox(width: 6),
-                      FilledButton.tonalIcon(
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size(76, 32),
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        onPressed: () => setState(
-                          () => _choosingJesseTarget = !_choosingJesseTarget,
-                        ),
-                        icon: const Icon(Icons.person_search, size: 16),
-                        label: const Text('CUOP 1'),
-                      ),
-                    ],
-                    if (widget.onSid != null) ...[
-                      const SizedBox(width: 6),
-                      FilledButton.tonal(
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size(76, 32),
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        onPressed: widget.onSid,
-                        child: const Text('SID +1'),
-                      ),
-                    ],
-                    const SizedBox(width: 10),
-                    if (_selectedCardId != null && !_isTargeting) ...[
-                      FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size(78, 32),
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        onPressed: _playSelected,
-                        icon: Icon(
-                          _isEquipmentCard(_selectedCardId!)
-                              ? Icons.add_to_photos_outlined
-                              : Icons.play_arrow,
-                        ),
-                        label: Text(
-                          _isEquipmentCard(_selectedCardId!)
-                              ? 'DAT BAI'
-                              : 'DANH',
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                    ],
-                    FilledButton.tonal(
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(86, 32),
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      onPressed: widget.canPlay ? widget.onEndTurn : null,
-                      child: const Text('HET LUOT'),
-                    ),
-                  ],
+                Positioned(
+                  left: size.maxWidth * .18,
+                  right: size.maxWidth * .18,
+                  bottom: 140,
+                  child: widget.pendingDock,
                 ),
-              ),
-              Positioned(
-                left: size.maxWidth * .18,
-                right: size.maxWidth * .18,
-                bottom: 140,
-                child: widget.pendingDock,
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     ),
   );

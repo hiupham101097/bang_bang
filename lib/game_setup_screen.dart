@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'data/online_room_repository.dart';
 import 'domain/online_models.dart';
@@ -27,188 +28,202 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
   String? _pendingCharacterCardId;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: const Color(0xff160c08),
-    body: SafeArea(
-      child: StreamBuilder<PrivateSetupState?>(
-        stream: widget.repository.watchPrivateSetup(widget.room.id),
-        builder: (context, snapshot) {
-          final state = snapshot.data;
-          final phase = state?.phase ?? widget.room.phase;
-          final isRoleStep = phase == 'role_selection';
-          final isCharacterStep =
-              phase == 'character_selection' || phase == 'choosing_character';
-          final selectedCharacter = _selectedCharacterForCenter(state);
-          final selectedRole = _selectedRoleForCenter(state);
-          final finalCharacterIds = state?.characterOptions.length == 2
-              ? state!.characterOptions
-              : const <String>[];
-          final isRoleReveal = phase == 'role_reveal';
-          if (state != null && finalCharacterIds.isEmpty) {
-            _inspectedCharacterId = null;
-          }
-          final hasPickedRole =
-              state?.roleDeck.any((card) => card.pickedBy == state.playerId) ??
-              false;
-          final isPickingRole = state != null && isRoleStep && !hasPickedRole;
-          final isPickingCharacter =
-              state != null &&
-              isCharacterStep &&
-              state.characterOptions.length < 2;
-          final showCenterStage =
-              state == null ||
-              isRoleReveal ||
-              (!isPickingRole && !isPickingCharacter) ||
-              phase == 'choosing_character';
+  void initState() {
+    super.initState();
+    SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+  }
 
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              return Stack(
-                children: [
-                  const Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        image: DecorationImage(
-                          image: AssetImage('assets/images/room_table.png'),
-                          fit: BoxFit.cover,
+  @override
+  void dispose() {
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: BangScenicBackground(
+      asset: 'assets/images/room_table.png',
+      overlay: .42,
+      child: SafeArea(
+        child: StreamBuilder<PrivateSetupState?>(
+          stream: widget.repository.watchPrivateSetup(widget.room.id),
+          builder: (context, snapshot) {
+            final state = snapshot.data;
+            final phase = state?.phase ?? widget.room.phase;
+            final isRoleStep = phase == 'role_selection';
+            final isCharacterStep =
+                phase == 'character_selection' || phase == 'choosing_character';
+            final selectedCharacter = _selectedCharacterForCenter(state);
+            final selectedRole = _selectedRoleForCenter(state);
+            final finalCharacterIds = state?.characterOptions.length == 2
+                ? state!.characterOptions
+                : const <String>[];
+            final isRoleReveal = phase == 'role_reveal';
+            if (state != null && finalCharacterIds.isEmpty) {
+              _inspectedCharacterId = null;
+            }
+            final hasPickedRole =
+                state?.roleDeck.any(
+                  (card) => card.pickedBy == state.playerId,
+                ) ??
+                false;
+            final isPickingRole = state != null && isRoleStep && !hasPickedRole;
+            final isPickingCharacter =
+                state != null &&
+                isCharacterStep &&
+                state.characterOptions.length < 2;
+            final showCenterStage =
+                state == null ||
+                isRoleReveal ||
+                (!isPickingRole && !isPickingCharacter) ||
+                phase == 'choosing_character';
+
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                return Stack(
+                  children: [
+                    Positioned.fill(
+                      child: _SetupPlayerRing(members: widget.room.members),
+                    ),
+                    Positioned(
+                      left: 12,
+                      top: 10,
+                      right: 12,
+                      child: BangPanel(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 7,
+                        ),
+                        child: _SetupHeader(
+                          phase: phase,
+                          deadline: state?.selectionDeadlineAt,
                         ),
                       ),
                     ),
-                  ),
-                  const Positioned.fill(
-                    child: ColoredBox(color: Color(0x66160c08)),
-                  ),
-                  Positioned.fill(
-                    child: _SetupPlayerRing(members: widget.room.members),
-                  ),
-                  Positioned(
-                    left: 8,
-                    top: 6,
-                    right: 8,
-                    child: _SetupHeader(
-                      phase: phase,
-                      deadline: state?.selectionDeadlineAt,
-                    ),
-                  ),
-                  if (showCenterStage)
-                    Positioned.fill(
-                      top: 34,
-                      bottom: 8,
-                      child: state == null
-                          ? const Center(child: CircularProgressIndicator())
-                          : _SetupCenterStage(
-                              phase: phase,
-                              role: selectedRole,
-                              selectedCharacterId: selectedCharacter,
-                              submitted: state.submitted,
-                              finalCharacterIds: finalCharacterIds,
-                              revealDelaySeconds: 0,
-                              canConfirmCharacter:
-                                  selectedCharacter != null &&
-                                  !state.submitted &&
-                                  state.characterOptions.contains(
-                                    selectedCharacter,
-                                  ),
-                              onConfirmCharacter: selectedCharacter == null
-                                  ? null
-                                  : () => widget.repository.chooseCharacter(
-                                      widget.room.id,
+                    if (showCenterStage)
+                      Positioned.fill(
+                        top: 34,
+                        bottom: 8,
+                        child: state == null
+                            ? const Center(child: CircularProgressIndicator())
+                            : _SetupCenterStage(
+                                phase: phase,
+                                role: selectedRole,
+                                selectedCharacterId: selectedCharacter,
+                                submitted: state.submitted,
+                                finalCharacterIds: finalCharacterIds,
+                                revealDelaySeconds: 0,
+                                canConfirmCharacter:
+                                    selectedCharacter != null &&
+                                    !state.submitted &&
+                                    state.characterOptions.contains(
                                       selectedCharacter,
-                                      '${DateTime.now().microsecondsSinceEpoch}_$selectedCharacter',
                                     ),
-                              onInspectCharacter: (id) =>
-                                  setState(() => _inspectedCharacterId = id),
-                            ),
-                    ),
-                  if (state != null)
-                    Positioned.fill(
-                      top: 42,
-                      bottom: 8,
-                      child: IgnorePointer(
-                        ignoring:
-                            _pendingRoleCardId != null ||
-                            _pendingCharacterCardId != null ||
-                            !(isPickingRole || isPickingCharacter),
-                        child: isPickingRole
-                            ? _RoleDeck(
-                                cards: state.roleDeck,
-                                playerCount: widget.room.members.length,
-                                playerId: state.playerId,
-                                pendingCardId: _pendingRoleCardId,
-                                canPick: !hasPickedRole,
-                                onPick: (cardId) =>
-                                    setState(() => _pendingRoleCardId = cardId),
-                              )
-                            : isPickingCharacter
-                            ? _CharacterDeck(
-                                cards: state.characterDeck,
-                                playerId: state.playerId,
-                                pendingCardId: _pendingCharacterCardId,
-                                onPick: (cardId) => setState(
-                                  () => _pendingCharacterCardId = cardId,
-                                ),
-                              )
-                            : const SizedBox.shrink(),
+                                onConfirmCharacter: selectedCharacter == null
+                                    ? null
+                                    : () => widget.repository.chooseCharacter(
+                                        widget.room.id,
+                                        selectedCharacter,
+                                        '${DateTime.now().microsecondsSinceEpoch}_$selectedCharacter',
+                                      ),
+                                onInspectCharacter: (id) =>
+                                    setState(() => _inspectedCharacterId = id),
+                              ),
                       ),
-                    ),
-                  if (state != null &&
-                      isRoleStep &&
-                      !hasPickedRole &&
-                      _pendingRoleCardId != null)
-                    Center(
-                      child: _SetupPickConfirm(
-                        title: 'Nhan vai tro nay?',
-                        onCancel: () =>
-                            setState(() => _pendingRoleCardId = null),
-                        onConfirm: () async {
-                          final cardId = _pendingRoleCardId;
-                          if (cardId == null) return;
-                          setState(() => _pendingRoleCardId = null);
-                          await widget.repository.chooseRole(
-                            widget.room.id,
-                            cardId,
-                          );
-                        },
-                        child: const _CardBack(
-                          width: 102,
-                          height: 143,
-                          label: 'VAI TRO',
-                          highlighted: true,
+                    if (state != null)
+                      Positioned.fill(
+                        top: 42,
+                        bottom: 8,
+                        child: IgnorePointer(
+                          ignoring:
+                              _pendingRoleCardId != null ||
+                              _pendingCharacterCardId != null ||
+                              !(isPickingRole || isPickingCharacter),
+                          child: isPickingRole
+                              ? _RoleDeck(
+                                  cards: state.roleDeck,
+                                  playerCount: widget.room.members.length,
+                                  playerId: state.playerId,
+                                  pendingCardId: _pendingRoleCardId,
+                                  canPick: !hasPickedRole,
+                                  onPick: (cardId) => setState(
+                                    () => _pendingRoleCardId = cardId,
+                                  ),
+                                )
+                              : isPickingCharacter
+                              ? _CharacterDeck(
+                                  cards: state.characterDeck,
+                                  playerId: state.playerId,
+                                  pendingCardId: _pendingCharacterCardId,
+                                  onPick: (cardId) => setState(
+                                    () => _pendingCharacterCardId = cardId,
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
                         ),
                       ),
-                    ),
-                  if (state != null &&
-                      isCharacterStep &&
-                      state.characterOptions.length < 2 &&
-                      _pendingCharacterCardId != null)
-                    Center(
-                      child: _SetupPickConfirm(
-                        title:
-                            'Chon la nhan vat ${state.characterOptions.length + 1}/2?',
-                        onCancel: () =>
-                            setState(() => _pendingCharacterCardId = null),
-                        onConfirm: () async {
-                          final cardId = _pendingCharacterCardId;
-                          if (cardId == null) return;
-                          setState(() => _pendingCharacterCardId = null);
-                          await widget.repository.takeCharacterCard(
-                            widget.room.id,
-                            cardId,
-                          );
-                        },
-                        child: const _CardBack(
-                          width: 102,
-                          height: 143,
-                          label: 'NHAN VAT',
-                          highlighted: true,
+                    if (state != null &&
+                        isRoleStep &&
+                        !hasPickedRole &&
+                        _pendingRoleCardId != null)
+                      Center(
+                        child: _SetupPickConfirm(
+                          title: 'Nhan vai tro nay?',
+                          onCancel: () =>
+                              setState(() => _pendingRoleCardId = null),
+                          onConfirm: () async {
+                            final cardId = _pendingRoleCardId;
+                            if (cardId == null) return;
+                            setState(() => _pendingRoleCardId = null);
+                            await widget.repository.chooseRole(
+                              widget.room.id,
+                              cardId,
+                            );
+                          },
+                          child: const _CardBack(
+                            width: 102,
+                            height: 143,
+                            label: 'VAI TRO',
+                            highlighted: true,
+                          ),
                         ),
                       ),
-                    ),
-                ],
-              );
-            },
-          );
-        },
+                    if (state != null &&
+                        isCharacterStep &&
+                        state.characterOptions.length < 2 &&
+                        _pendingCharacterCardId != null)
+                      Center(
+                        child: _SetupPickConfirm(
+                          title:
+                              'Chon la nhan vat ${state.characterOptions.length + 1}/2?',
+                          onCancel: () =>
+                              setState(() => _pendingCharacterCardId = null),
+                          onConfirm: () async {
+                            final cardId = _pendingCharacterCardId;
+                            if (cardId == null) return;
+                            setState(() => _pendingCharacterCardId = null);
+                            await widget.repository.takeCharacterCard(
+                              widget.room.id,
+                              cardId,
+                            );
+                          },
+                          child: const _CardBack(
+                            width: 102,
+                            height: 143,
+                            label: 'NHAN VAT',
+                            highlighted: true,
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            );
+          },
+        ),
       ),
     ),
   );
@@ -283,10 +298,10 @@ class _SetupHeaderState extends State<_SetupHeader> {
         .clamp(0, 60);
     final urgent = seconds != null && seconds <= 10;
     return SizedBox(
-      height: 28,
+      height: 30,
       child: Row(
         children: [
-          const Icon(Icons.pause, color: Colors.white, size: 18),
+          const Icon(Icons.casino_outlined, color: BangColors.brass, size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -294,7 +309,7 @@ class _SetupHeaderState extends State<_SetupHeader> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Color(0xffffc451),
+                color: BangColors.paper,
                 fontSize: 13,
                 fontWeight: FontWeight.w900,
               ),
@@ -303,16 +318,18 @@ class _SetupHeaderState extends State<_SetupHeader> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
             decoration: BoxDecoration(
-              color: urgent ? const Color(0xff5a1913) : const Color(0xff2c1a0f),
-              borderRadius: BorderRadius.circular(18),
+              color: urgent
+                  ? BangColors.oxblood.withValues(alpha: .7)
+                  : BangColors.ink.withValues(alpha: .64),
+              borderRadius: BorderRadius.circular(9),
               border: Border.all(
-                color: urgent ? Colors.redAccent : const Color(0xffffc451),
+                color: urgent ? const Color(0xffff7165) : BangColors.brass,
               ),
             ),
             child: Text(
               seconds == null ? '--' : '${seconds}s',
               style: TextStyle(
-                color: urgent ? Colors.redAccent : const Color(0xffffd272),
+                color: urgent ? const Color(0xffffa49c) : BangColors.brass,
                 fontWeight: FontWeight.w900,
                 fontSize: 12,
               ),
@@ -383,10 +400,10 @@ class _SetupSeat extends StatelessWidget {
   @override
   Widget build(BuildContext context) => DecoratedBox(
     decoration: BoxDecoration(
-      color: const Color(0xdd2a1811),
+      color: BangColors.panel.withValues(alpha: .92),
       shape: BoxShape.circle,
-      border: Border.all(color: const Color(0xffd6a13d), width: 2),
-      boxShadow: const [BoxShadow(color: Color(0x99000000), blurRadius: 8)],
+      border: Border.all(color: BangColors.brassDark, width: 2),
+      boxShadow: const [BoxShadow(color: Color(0x99000000), blurRadius: 10)],
     ),
     child: Padding(
       padding: const EdgeInsets.all(5),
@@ -822,9 +839,9 @@ class _SetupPickConfirm extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.fromLTRB(10, 10, 10, 9),
     decoration: BoxDecoration(
-      color: const Color(0xd9160c08),
-      borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: const Color(0xffffc451), width: 2),
+      color: BangColors.panel.withValues(alpha: .97),
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: BangColors.brass, width: 2),
       boxShadow: const [BoxShadow(color: Color(0xcc000000), blurRadius: 18)],
     ),
     child: FittedBox(
@@ -839,7 +856,7 @@ class _SetupPickConfirm extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              color: Color(0xffffd272),
+              color: BangColors.paper,
               fontSize: 12,
               fontWeight: FontWeight.w900,
             ),
@@ -890,9 +907,9 @@ class _FramedImageCard extends StatelessWidget {
     height: height,
     padding: const EdgeInsets.all(6),
     decoration: BoxDecoration(
-      color: const Color(0xfff4dfac),
-      borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: const Color(0xffffc451), width: 2),
+      color: BangColors.paper,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: BangColors.paperDark, width: 2),
       boxShadow: const [BoxShadow(color: Color(0xaa000000), blurRadius: 10)],
     ),
     child: Column(
@@ -933,10 +950,10 @@ class _CardBack extends StatelessWidget {
     height: height,
     alignment: Alignment.center,
     decoration: BoxDecoration(
-      color: const Color(0xff3a2115),
-      borderRadius: BorderRadius.circular(6),
+      color: BangColors.panel,
+      borderRadius: BorderRadius.circular(8),
       border: Border.all(
-        color: highlighted ? const Color(0xffffc451) : const Color(0xffb5823b),
+        color: highlighted ? BangColors.brass : BangColors.brassDark,
         width: highlighted ? 3 : 2,
       ),
       image: const DecorationImage(
@@ -951,7 +968,7 @@ class _CardBack extends StatelessWidget {
             label,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              color: Color(0xffffd272),
+              color: BangColors.paper,
               fontSize: 11,
               fontWeight: FontWeight.w900,
             ),

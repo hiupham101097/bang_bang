@@ -270,6 +270,36 @@ class BangPanel extends StatelessWidget {
   );
 }
 
+/// The shared play surface for setup and live matches.  It keeps the actual
+/// table visually quiet while the cards and player seats remain the focus.
+class BangTableFelt extends StatelessWidget {
+  const BangTableFelt({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      gradient: const RadialGradient(
+        center: Alignment(-.08, -.18),
+        radius: 1.15,
+        colors: [Color(0xff236447), BangColors.feltDark],
+      ),
+      borderRadius: BorderRadius.circular(180),
+      border: Border.all(color: BangColors.brassDark, width: 2),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0xa8000000),
+          blurRadius: 24,
+          offset: Offset(0, 10),
+        ),
+        BoxShadow(color: Color(0x44784a21), blurRadius: 2, spreadRadius: 2),
+      ],
+    ),
+    child: child,
+  );
+}
+
 class BangButton extends StatefulWidget {
   const BangButton({
     super.key,
