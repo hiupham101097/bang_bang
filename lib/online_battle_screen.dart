@@ -1381,6 +1381,12 @@ class OnlineBattleScreen extends StatelessWidget {
               if (context.mounted) await _useSidKetchum(context, hand);
             }
           : null,
+      onTutorial: () => _showFirstTimeTutorial(context),
+      onHistory: room.publicLog.isEmpty ? null : () => _showActionLog(context),
+      onGuide: () => _showGuide(context, room.phase, isMyTurn),
+      onChat: room.settings.chatEnabled && GameVoiceChat.isAvailable
+          ? () => _showChat(context)
+          : null,
       pendingDock: _pendingActionDock(context, playerId),
     );
   }
@@ -1557,6 +1563,10 @@ class _RoundBattleTable extends StatefulWidget {
     required this.onTargetedPlay,
     required this.onJesseDraw,
     required this.onSid,
+    required this.onTutorial,
+    required this.onHistory,
+    required this.onGuide,
+    required this.onChat,
     required this.pendingDock,
   });
 
@@ -1572,6 +1582,10 @@ class _RoundBattleTable extends StatefulWidget {
   final void Function(String cardId, String targetId)? onTargetedPlay;
   final ValueChanged<String>? onJesseDraw;
   final VoidCallback? onSid;
+  final VoidCallback onTutorial;
+  final VoidCallback? onHistory;
+  final VoidCallback onGuide;
+  final VoidCallback? onChat;
   final Widget pendingDock;
 
   @override
@@ -1623,6 +1637,11 @@ class _RoundBattleTableState extends State<_RoundBattleTable> {
     if (cardId == null || callback == null || _isTargeting) return;
     setState(() => _selectedCardId = null);
     callback(cardId);
+  }
+
+  Future<void> _toggleSound() async {
+    await GameAudio.instance.toggle();
+    if (mounted) setState(() {});
   }
 
   bool _canTarget(RoomMember target) {
@@ -1690,6 +1709,8 @@ class _RoundBattleTableState extends State<_RoundBattleTable> {
               Offset(.22, .09),
             ];
             final center = Offset(size.maxWidth / 2, size.maxHeight * .42);
+            final deckScale = (size.maxWidth / 800).clamp(1.0, 1.35);
+            final centerPilesWidth = 54 * deckScale * 3 + 48;
             return Stack(
               children: [
                 Positioned.fill(
@@ -1699,9 +1720,9 @@ class _RoundBattleTableState extends State<_RoundBattleTable> {
                   ),
                 ),
                 Positioned(
-                  top: 10,
-                  left: 48,
-                  right: 48,
+                  top: 7,
+                  left: size.maxWidth * .31,
+                  right: size.maxWidth * .31,
                   child: BangPanel(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 14,
@@ -1722,6 +1743,57 @@ class _RoundBattleTableState extends State<_RoundBattleTable> {
                   ),
                 ),
                 Positioned(
+                  left: 10,
+                  top: 8,
+                  child: Row(
+                    children: [
+                      _BattleChromeButton(
+                        icon: Icons.menu_rounded,
+                        tooltip: 'Hướng dẫn nhanh',
+                        onPressed: widget.onTutorial,
+                      ),
+                      const SizedBox(width: 6),
+                      _BattleChromeButton(
+                        icon: Icons.history_rounded,
+                        tooltip: 'Lịch sử hành động',
+                        onPressed: widget.onHistory,
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  right: 10,
+                  top: 8,
+                  child: Row(
+                    children: [
+                      _BattleChromeButton(
+                        icon: GameAudio.instance.enabled
+                            ? Icons.volume_up_rounded
+                            : Icons.volume_off_rounded,
+                        tooltip: GameAudio.instance.enabled
+                            ? 'Tắt âm thanh'
+                            : 'Bật âm thanh',
+                        onPressed: _toggleSound,
+                      ),
+                      const SizedBox(width: 6),
+                      _BattleChromeButton(
+                        icon: Icons.help_outline_rounded,
+                        tooltip: 'Luật theo lượt',
+                        onPressed: widget.onGuide,
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  top: 11,
+                  right: size.maxWidth * .315,
+                  child: _TurnCountdown(
+                    deadline: widget.room.turnDeadlineAt,
+                    isMyTurn: widget.activePlayer?.id == widget.playerId,
+                    onExpired: () {},
+                  ),
+                ),
+                Positioned(
                   top: size.maxHeight * .235,
                   left: size.maxWidth * .30,
                   right: size.maxWidth * .30,
@@ -1734,15 +1806,21 @@ class _RoundBattleTableState extends State<_RoundBattleTable> {
                   ),
                 ),
                 Positioned(
-                  left: center.dx - 91,
+                  left: center.dx - centerPilesWidth / 2,
                   top: center.dy - 12,
                   child: Row(
-                    children: const [
-                      _TableDeck(label: 'RUT'),
-                      SizedBox(width: 24),
-                      _TableDeck(label: 'DANH'),
-                      SizedBox(width: 24),
-                      _TableDeck(label: 'BO'),
+                    children: [
+                      const _TableDeck(label: 'RÚT'),
+                      const SizedBox(width: 24),
+                      _TableDeck(
+                        label: 'ĐANG ĐÁNH',
+                        cardId: _latestPublicCardId(widget.room),
+                      ),
+                      const SizedBox(width: 24),
+                      _TableDeck(
+                        label: 'BỎ',
+                        cardId: widget.room.discardTopCardId,
+                      ),
                     ],
                   ),
                 ),
@@ -1777,7 +1855,7 @@ class _RoundBattleTableState extends State<_RoundBattleTable> {
                 Positioned(
                   left: 12,
                   right: 12,
-                  bottom: 116,
+                  top: size.maxHeight * .66,
                   child: Center(
                     child: BangPanel(
                       padding: const EdgeInsets.symmetric(
@@ -1791,7 +1869,10 @@ class _RoundBattleTableState extends State<_RoundBattleTable> {
                             ? 'CHỌN MỤC TIÊU TRONG TẦM BẮN'
                             : widget.room.publicLog.isEmpty
                             ? _phaseLabel(widget.room.phase)
-                            : widget.room.publicLog.last,
+                            : _publicLogLabel(
+                                widget.room,
+                                widget.room.publicLog.last,
+                              ),
                         textAlign: TextAlign.center,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -1808,7 +1889,7 @@ class _RoundBattleTableState extends State<_RoundBattleTable> {
                   left: landscape ? size.maxWidth * .34 : size.maxWidth * .25,
                   right: landscape ? size.maxWidth * .22 : size.maxWidth * .25,
                   bottom: 8,
-                  height: 126,
+                  height: (size.maxHeight * .24).clamp(118.0, 175.0),
                   child: StreamBuilder<List<String>>(
                     stream: widget.repository.watchHand(widget.room.id),
                     builder: (context, snapshot) => _FannedBattleHand(
@@ -1830,92 +1911,111 @@ class _RoundBattleTableState extends State<_RoundBattleTable> {
                         horizontal: 8,
                         vertical: 6,
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          FilledButton(
-                            style: FilledButton.styleFrom(
-                              minimumSize: const Size(74, 32),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                              ),
-                              visualDensity: VisualDensity.compact,
-                            ),
-                            onPressed: widget.canDraw ? widget.onDraw : null,
-                            child: const Text('RUT 2'),
-                          ),
-                          if (widget.onJesseDraw != null) ...[
-                            const SizedBox(width: 6),
-                            FilledButton.tonalIcon(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 176),
+                        child: Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            FilledButton(
                               style: FilledButton.styleFrom(
-                                minimumSize: const Size(76, 32),
+                                minimumSize: const Size(74, 32),
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
+                                  horizontal: 12,
                                 ),
                                 visualDensity: VisualDensity.compact,
                               ),
-                              onPressed: () => setState(
-                                () => _choosingJesseTarget =
-                                    !_choosingJesseTarget,
-                              ),
-                              icon: const Icon(Icons.person_search, size: 16),
-                              label: const Text('CUOP 1'),
+                              onPressed: widget.canDraw ? widget.onDraw : null,
+                              child: const Text('RÚT 2'),
                             ),
-                          ],
-                          if (widget.onSid != null) ...[
-                            const SizedBox(width: 6),
-                            FilledButton.tonal(
+                            if (widget.onJesseDraw != null) ...[
+                              FilledButton.tonalIcon(
+                                style: FilledButton.styleFrom(
+                                  minimumSize: const Size(76, 32),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                  ),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                onPressed: () => setState(
+                                  () => _choosingJesseTarget =
+                                      !_choosingJesseTarget,
+                                ),
+                                icon: const Icon(Icons.person_search, size: 16),
+                                label: const Text('CƯỚP 1'),
+                              ),
+                            ],
+                            if (widget.onSid != null) ...[
+                              FilledButton.tonal(
+                                style: FilledButton.styleFrom(
+                                  minimumSize: const Size(76, 32),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                  ),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                onPressed: widget.onSid,
+                                child: const Text('SID +1'),
+                              ),
+                            ],
+                            if (_selectedCardId != null && !_isTargeting) ...[
+                              FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  minimumSize: const Size(78, 32),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                  ),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                onPressed: _playSelected,
+                                icon: Icon(
+                                  _isEquipmentCard(_selectedCardId!)
+                                      ? Icons.add_to_photos_outlined
+                                      : Icons.play_arrow,
+                                ),
+                                label: Text(
+                                  _isEquipmentCard(_selectedCardId!)
+                                      ? 'ĐẶT BÀI'
+                                      : 'ĐÁNH',
+                                ),
+                              ),
+                            ],
+                            FilledButton(
                               style: FilledButton.styleFrom(
-                                minimumSize: const Size(76, 32),
+                                minimumSize: const Size(86, 32),
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
+                                  horizontal: 12,
                                 ),
                                 visualDensity: VisualDensity.compact,
                               ),
-                              onPressed: widget.onSid,
-                              child: const Text('SID +1'),
+                              onPressed: widget.canPlay
+                                  ? widget.onEndTurn
+                                  : null,
+                              child: const Text('HẾT LƯỢT'),
                             ),
                           ],
-                          const SizedBox(width: 10),
-                          if (_selectedCardId != null && !_isTargeting) ...[
-                            FilledButton.icon(
-                              style: FilledButton.styleFrom(
-                                minimumSize: const Size(78, 32),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                ),
-                                visualDensity: VisualDensity.compact,
-                              ),
-                              onPressed: _playSelected,
-                              icon: Icon(
-                                _isEquipmentCard(_selectedCardId!)
-                                    ? Icons.add_to_photos_outlined
-                                    : Icons.play_arrow,
-                              ),
-                              label: Text(
-                                _isEquipmentCard(_selectedCardId!)
-                                    ? 'DAT BAI'
-                                    : 'DANH',
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                          ],
-                          FilledButton(
-                            style: FilledButton.styleFrom(
-                              minimumSize: const Size(86, 32),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                              ),
-                              visualDensity: VisualDensity.compact,
-                            ),
-                            onPressed: widget.canPlay ? widget.onEndTurn : null,
-                            child: const Text('HET LUOT'),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
                 ),
+                if (widget.onChat != null)
+                  Positioned(
+                    left: 12,
+                    bottom: 12,
+                    child: OutlinedButton.icon(
+                      onPressed: widget.onChat,
+                      icon: const Icon(Icons.forum_outlined, size: 17),
+                      label: const Text('CHAT'),
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: BangColors.ink.withValues(alpha: .82),
+                        foregroundColor: BangColors.paper,
+                        side: const BorderSide(color: BangColors.brassDark),
+                        minimumSize: const Size(92, 42),
+                      ),
+                    ),
+                  ),
                 Positioned(
                   left: size.maxWidth * .18,
                   right: size.maxWidth * .18,
@@ -1948,7 +2048,11 @@ class _FannedBattleHand extends StatelessWidget {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       if (cards.isEmpty) return const SizedBox.shrink();
-      const cardWidth = 64.0;
+      final cardWidth = (MediaQuery.sizeOf(context).width * .072).clamp(
+        58.0,
+        96.0,
+      );
+      final cardHeight = cardWidth * 1.72;
       final availableStep = cards.length <= 1
           ? cardWidth
           : (constraints.maxWidth - cardWidth) / (cards.length - 1);
@@ -1958,7 +2062,7 @@ class _FannedBattleHand extends StatelessWidget {
         alignment: Alignment.bottomCenter,
         child: SizedBox(
           width: fanWidth + 12,
-          height: 124,
+          height: cardHeight + 10,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
@@ -1973,7 +2077,7 @@ class _FannedBattleHand extends StatelessWidget {
                     child: GameCardWidget(
                       card: _publicGameCard(cards[index]),
                       width: cardWidth,
-                      height: 114,
+                      height: cardHeight,
                       isSelected: cards[index] == selectedCardId,
                       isEnabled: enabled,
                       onTap: enabled ? () => onTap(cards[index]) : null,
@@ -1989,45 +2093,95 @@ class _FannedBattleHand extends StatelessWidget {
 }
 
 class _TableDeck extends StatelessWidget {
-  const _TableDeck({required this.label});
+  const _TableDeck({required this.label, this.cardId});
+
   final String label;
+  final String? cardId;
+
   @override
-  Widget build(BuildContext context) => Column(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Container(
-        width: 52,
-        height: 70,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: BangColors.panel,
-          border: Border.all(color: BangColors.brassDark, width: 2),
-          borderRadius: BorderRadius.circular(7),
-          image: const DecorationImage(
-            image: AssetImage('assets/images/bang_bang_logo.png'),
-            fit: BoxFit.contain,
-            opacity: .36,
+  Widget build(BuildContext context) {
+    final scale = (MediaQuery.sizeOf(context).width / 800).clamp(1.0, 1.35);
+    final width = 54.0 * scale;
+    final height = 76.0 * scale;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: width,
+          height: height,
+          child: cardId == null
+              ? Container(
+                  decoration: BoxDecoration(
+                    color: BangColors.panel,
+                    border: Border.all(color: BangColors.brassDark, width: 2),
+                    borderRadius: BorderRadius.circular(7),
+                    image: const DecorationImage(
+                      image: AssetImage('assets/images/bang_bang_logo.png'),
+                      fit: BoxFit.contain,
+                      opacity: .42,
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x99000000),
+                        blurRadius: 7,
+                        offset: Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                )
+              : IgnorePointer(
+                  child: GameCardWidget(
+                    card: _publicGameCard(cardId!),
+                    width: width,
+                    height: height,
+                  ),
+                ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            color: BangColors.paper,
+            fontWeight: FontWeight.w900,
+            letterSpacing: .7,
+            fontSize: 8,
           ),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x99000000),
-              blurRadius: 7,
-              offset: Offset(0, 3),
-            ),
-          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _BattleChromeButton extends StatelessWidget {
+  const _BattleChromeButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 40,
+    height: 40,
+    child: IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      padding: EdgeInsets.zero,
+      style: IconButton.styleFrom(
+        foregroundColor: BangColors.paper,
+        disabledForegroundColor: BangColors.muted.withValues(alpha: .3),
+        backgroundColor: BangColors.ink.withValues(alpha: .86),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: const BorderSide(color: BangColors.brassDark),
         ),
       ),
-      const SizedBox(height: 4),
-      Text(
-        label,
-        style: const TextStyle(
-          color: BangColors.paper,
-          fontWeight: FontWeight.w900,
-          letterSpacing: .8,
-          fontSize: 9,
-        ),
-      ),
-    ],
+      icon: Icon(icon, size: 22),
+    ),
   );
 }
 
@@ -2072,100 +2226,256 @@ class _RoundSeat extends StatelessWidget {
   final VoidCallback? onTarget;
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: canTarget ? onTarget : null,
-    child: AnimatedScale(
-      scale: active || canTarget ? 1.04 : 1,
-      duration: BangMotion.resolve(context, BangMotion.fast),
-      curve: BangMotion.curve,
-      child: SizedBox(
-        width: isLocal ? 160 : 96,
-        height: isLocal ? 120 : 82,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Positioned.fill(
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: isLocal
-                      ? const Color(0xdd2c190f)
-                      : const Color(0x992c190f),
-                  border: Border.all(
-                    color: canTarget
-                        ? const Color(0xffff453a)
-                        : active
-                        ? const Color(0xffffc451)
-                        : const Color(0xff8d6236),
-                    width: canTarget || active ? 2 : 1,
-                  ),
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: Column(
-                  children: [
-                    Expanded(
-                      child: _SeatIdentity(member: member, large: isLocal),
-                    ),
-                    const SizedBox(height: 3),
-                    _SeatEquipment(equipment: member.equipment, large: isLocal),
-                  ],
-                ),
-              ),
-            ),
-            if (canTarget)
+  Widget build(BuildContext context) {
+    final responsiveScale = (MediaQuery.sizeOf(context).width / 900).clamp(
+      1.0,
+      1.18,
+    );
+    return GestureDetector(
+      onTap: canTarget ? onTarget : null,
+      child: AnimatedScale(
+        scale: responsiveScale * (active || canTarget ? 1.04 : 1),
+        duration: BangMotion.resolve(context, BangMotion.fast),
+        curve: BangMotion.curve,
+        child: SizedBox(
+          width: isLocal ? 168 : 128,
+          height: isLocal ? 118 : 92,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
               Positioned(
-                top: 4,
-                right: 4,
+                left: isLocal ? 54 : 38,
+                right: 0,
+                top: isLocal ? 13 : 11,
+                bottom: isLocal ? 21 : 18,
                 child: Container(
-                  width: isLocal ? 34 : 26,
-                  height: isLocal ? 34 : 26,
-                  decoration: const BoxDecoration(
-                    color: Color(0xffc62828),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(color: Colors.black54, blurRadius: 6),
+                  padding: EdgeInsets.fromLTRB(isLocal ? 17 : 13, 5, 5, 5),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xee3d2216), Color(0xee1b0f0a)],
+                    ),
+                    border: Border.all(
+                      color: canTarget
+                          ? const Color(0xffff453a)
+                          : active
+                          ? BangColors.brass
+                          : BangColors.brassDark,
+                      width: canTarget || active ? 2 : 1,
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x99000000), blurRadius: 8),
                     ],
                   ),
-                  child: Icon(
-                    Icons.gps_fixed,
-                    color: Colors.white,
-                    size: isLocal ? 24 : 18,
-                  ),
-                ),
-              ),
-            if (member.revealedRole == 'sheriff')
-              Positioned(
-                left: 3,
-                top: 3,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xffffc451),
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.star, size: 9, color: Color(0xff2a160c)),
-                      SizedBox(width: 2),
                       Text(
-                        'SHERIFF',
+                        member.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: Color(0xff2a160c),
-                          fontSize: 6,
+                          color: BangColors.paper,
+                          fontSize: isLocal ? 11 : 8,
                           fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.favorite,
+                              size: isLocal ? 13 : 10,
+                              color: const Color(0xffe84235),
+                            ),
+                            const SizedBox(width: 2),
+                            Text(
+                              '${member.health}/${member.maxHealth}',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: isLocal ? 10 : 7,
+                                fontWeight: FontWeight.w800,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            Icon(
+                              Icons.style,
+                              size: isLocal ? 12 : 9,
+                              color: BangColors.paperDark,
+                            ),
+                            Text(
+                              '${member.cardCount}',
+                              style: TextStyle(
+                                color: BangColors.paper,
+                                fontSize: isLocal ? 10 : 7,
+                                fontWeight: FontWeight.w800,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
               ),
-          ],
+              Positioned(
+                left: 0,
+                top: 0,
+                child: Container(
+                  width: isLocal ? 74 : 58,
+                  height: isLocal ? 74 : 58,
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: BangColors.walnut,
+                    border: Border.all(
+                      color: canTarget
+                          ? const Color(0xffff453a)
+                          : active
+                          ? BangColors.brass
+                          : BangColors.brassDark,
+                      width: active || canTarget ? 3 : 2,
+                    ),
+                    boxShadow: active
+                        ? const [
+                            BoxShadow(color: Color(0x99ffc85a), blurRadius: 12),
+                          ]
+                        : const [
+                            BoxShadow(color: Color(0xaa000000), blurRadius: 8),
+                          ],
+                  ),
+                  child: ClipOval(
+                    child: Image.asset(
+                      _battleSeatAvatarAsset(member),
+                      fit: BoxFit.cover,
+                      color: member.isAlive ? null : Colors.black54,
+                      colorBlendMode: member.isAlive ? null : BlendMode.darken,
+                      errorBuilder: (_, _, _) => const ColoredBox(
+                        color: BangColors.paperDark,
+                        child: Icon(Icons.person, color: BangColors.ink),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: isLocal ? 49 : 34,
+                right: 0,
+                bottom: 0,
+                child: _SeatEquipment(
+                  equipment: member.equipment,
+                  large: isLocal,
+                ),
+              ),
+              if (!isLocal && member.cardCount > 0)
+                Positioned(
+                  right: 2,
+                  top: -8,
+                  child: _OpponentHandBacks(count: member.cardCount),
+                ),
+              if (canTarget)
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: Container(
+                    width: isLocal ? 34 : 26,
+                    height: isLocal ? 34 : 26,
+                    decoration: const BoxDecoration(
+                      color: Color(0xffc62828),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(color: Colors.black54, blurRadius: 6),
+                      ],
+                    ),
+                    child: Icon(
+                      Icons.gps_fixed,
+                      color: Colors.white,
+                      size: isLocal ? 24 : 18,
+                    ),
+                  ),
+                ),
+              if (member.revealedRole == 'sheriff')
+                Positioned(
+                  left: isLocal ? 52 : 38,
+                  top: isLocal ? 72 : 56,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xffffc451),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.star, size: 9, color: Color(0xff2a160c)),
+                        SizedBox(width: 2),
+                        Text(
+                          'SHERIFF',
+                          style: TextStyle(
+                            color: Color(0xff2a160c),
+                            fontSize: 6,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _OpponentHandBacks extends StatelessWidget {
+  const _OpponentHandBacks({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 42,
+    height: 30,
+    child: Stack(
+      children: [
+        for (var index = 0; index < count.clamp(1, 3); index++)
+          Positioned(
+            left: index * 9,
+            child: Transform.rotate(
+              angle: (index - 1) * .08,
+              child: Container(
+                width: 20,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: BangColors.panelRaised,
+                  borderRadius: BorderRadius.circular(3),
+                  border: Border.all(color: BangColors.brassDark),
+                  image: const DecorationImage(
+                    image: AssetImage('assets/images/bang_bang_logo.png'),
+                    fit: BoxFit.contain,
+                    opacity: .45,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     ),
   );
 }
@@ -2302,6 +2612,24 @@ String _battleCharacterAsset(String? id) => switch (id) {
   'rose_doolan' => 'assets/images/characters/rose_oolan.png',
   _ => 'assets/images/characters/$id.png',
 };
+
+String _battleSeatAvatarAsset(RoomMember member) {
+  if (member.characterId != null) {
+    return _battleCharacterAsset(member.characterId);
+  }
+  const neutralCharacters = [
+    'bart_cassidy',
+    'black_jack',
+    'calamity_janet',
+    'el_gringo',
+    'jesse_jones',
+    'jourdonnais',
+    'kit_carlson',
+    'paul_regret',
+  ];
+  final id = neutralCharacters[member.seat.abs() % neutralCharacters.length];
+  return 'assets/images/characters/$id.png';
+}
 
 class _TurnTimeoutDriver extends StatefulWidget {
   const _TurnTimeoutDriver({

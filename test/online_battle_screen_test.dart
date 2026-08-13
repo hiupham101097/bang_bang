@@ -6,10 +6,58 @@ import 'package:bangbang/domain/online_models.dart';
 import 'package:bangbang/game_card_widget.dart';
 import 'package:bangbang/game_engine.dart';
 import 'package:bangbang/online_battle_screen.dart';
+import 'package:bangbang/ui/bang_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('battle table matches the approved landscape composition', (
+    tester,
+  ) async {
+    final repository = _FakeBattleRepository();
+    await tester.binding.setSurfaceSize(const Size(1280, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: bangTheme(),
+        home: OnlineBattleScreen(repository: repository, room: _room()),
+      ),
+    );
+    final imageContext = tester.element(find.byType(OnlineBattleScreen));
+    await tester.runAsync(() async {
+      await Future.wait(
+        const [
+          'assets/images/room_table.png',
+          'assets/images/bang_bang_logo.png',
+          'assets/images/characters/lucky_duke.png',
+          'assets/images/characters/bart_cassidy.png',
+          'assets/images/characters/black_jack.png',
+          'assets/images/characters/calamity_janet.png',
+          'assets/images/characters/el_gringo.png',
+          'assets/images/characters/jesse_jones.png',
+          'assets/images/characters/jourdonnais.png',
+          'assets/images/characters/kit_carlson.png',
+          'assets/images/characters/paul_regret.png',
+          'assets/images/cards/bang.png',
+          'assets/images/cards/ne.png',
+          'assets/images/cards/beer.png',
+          'assets/images/cards/gatling.png',
+          'assets/images/cards/panico.png',
+          'assets/images/cards/cat_balou.png',
+          'assets/images/cards/saloon.png',
+        ].map((asset) => precacheImage(AssetImage(asset), imageContext)),
+      );
+    });
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(tester.takeException(), isNull);
+    await expectLater(
+      find.byType(OnlineBattleScreen),
+      matchesGoldenFile('goldens/battle_landscape.png'),
+    );
+  });
+
   testWidgets('battle table fits eight players without vertical scrolling', (
     tester,
   ) async {

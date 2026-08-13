@@ -17,7 +17,7 @@ const cardCatalog = <CardInfo>[
     'dodge',
     'NÉ',
     'Tránh một lá BANG hoặc đòn tấn công cho phép NÉ.',
-    imagePath: 'assets/images/cards/dodge.png',
+    imagePath: 'assets/images/cards/ne.png',
   ),
   CardInfo(
     'gatling',
