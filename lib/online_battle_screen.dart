@@ -1681,20 +1681,20 @@ class _RoundBattleTableState extends State<_RoundBattleTable> {
                     return leftOffset.compareTo(rightOffset);
                   });
             const opponentPoints = <Offset>[
-              Offset(.89, .43),
-              Offset(.88, .16),
-              Offset(.69, .14),
-              Offset(.47, .14),
-              Offset(.25, .14),
-              Offset(.03, .16),
-              Offset(.02, .43),
+              Offset(.46, .045),
+              Offset(.69, .09),
+              Offset(.84, .30),
+              Offset(.76, .57),
+              Offset(.16, .57),
+              Offset(.02, .30),
+              Offset(.22, .09),
             ];
             final center = Offset(size.maxWidth / 2, size.maxHeight * .42);
             return Stack(
               children: [
                 Positioned.fill(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 50, 16, 128),
+                    padding: const EdgeInsets.fromLTRB(18, 38, 18, 100),
                     child: BangTableFelt(child: const SizedBox.expand()),
                   ),
                 ),
@@ -1722,14 +1722,26 @@ class _RoundBattleTableState extends State<_RoundBattleTable> {
                   ),
                 ),
                 Positioned(
-                  left: center.dx - 64,
-                  top: center.dy - 20,
+                  top: size.maxHeight * .235,
+                  left: size.maxWidth * .30,
+                  right: size.maxWidth * .30,
+                  child: _BattleTargetBanner(
+                    label: _isTargeting
+                        ? 'CHỌN MỤC TIÊU'
+                        : _choosingJesseTarget
+                        ? 'JESSE JONES'
+                        : 'BÀN ĐẤU',
+                  ),
+                ),
+                Positioned(
+                  left: center.dx - 91,
+                  top: center.dy - 12,
                   child: Row(
                     children: const [
                       _TableDeck(label: 'RUT'),
-                      SizedBox(width: 10),
+                      SizedBox(width: 24),
                       _TableDeck(label: 'DANH'),
-                      SizedBox(width: 10),
+                      SizedBox(width: 24),
                       _TableDeck(label: 'BO'),
                     ],
                   ),
@@ -1753,9 +1765,9 @@ class _RoundBattleTableState extends State<_RoundBattleTable> {
                 }),
                 if (localPlayer != null)
                   Positioned(
-                    left: landscape ? 10 : null,
+                    left: landscape ? size.maxWidth * .24 : null,
                     right: landscape ? null : 10,
-                    bottom: 8,
+                    bottom: 4,
                     child: _RoundSeat(
                       member: localPlayer,
                       active: localPlayer.id == widget.room.currentTurnPlayerId,
@@ -1765,7 +1777,7 @@ class _RoundBattleTableState extends State<_RoundBattleTable> {
                 Positioned(
                   left: 12,
                   right: 12,
-                  bottom: 154,
+                  bottom: 116,
                   child: Center(
                     child: BangPanel(
                       padding: const EdgeInsets.symmetric(
@@ -1793,10 +1805,10 @@ class _RoundBattleTableState extends State<_RoundBattleTable> {
                   ),
                 ),
                 Positioned(
-                  left: landscape ? size.maxWidth * .21 : size.maxWidth * .25,
-                  right: landscape ? size.maxWidth * .25 : size.maxWidth * .25,
+                  left: landscape ? size.maxWidth * .34 : size.maxWidth * .25,
+                  right: landscape ? size.maxWidth * .22 : size.maxWidth * .25,
                   bottom: 8,
-                  height: 108,
+                  height: 126,
                   child: StreamBuilder<List<String>>(
                     stream: widget.repository.watchHand(widget.room.id),
                     builder: (context, snapshot) => _FannedBattleHand(
@@ -1936,17 +1948,17 @@ class _FannedBattleHand extends StatelessWidget {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       if (cards.isEmpty) return const SizedBox.shrink();
-      const cardWidth = 54.0;
+      const cardWidth = 64.0;
       final availableStep = cards.length <= 1
           ? cardWidth
           : (constraints.maxWidth - cardWidth) / (cards.length - 1);
-      final step = availableStep.clamp(24.0, 39.0);
+      final step = availableStep.clamp(28.0, 46.0);
       final fanWidth = cardWidth + step * (cards.length - 1);
       return Align(
         alignment: Alignment.bottomCenter,
         child: SizedBox(
           width: fanWidth + 12,
-          height: 108,
+          height: 124,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
@@ -1961,7 +1973,7 @@ class _FannedBattleHand extends StatelessWidget {
                     child: GameCardWidget(
                       card: _publicGameCard(cards[index]),
                       width: cardWidth,
-                      height: 96,
+                      height: 114,
                       isSelected: cards[index] == selectedCardId,
                       isEnabled: enabled,
                       onTap: enabled ? () => onTap(cards[index]) : null,
@@ -1980,37 +1992,68 @@ class _TableDeck extends StatelessWidget {
   const _TableDeck({required this.label});
   final String label;
   @override
-  Widget build(BuildContext context) => Container(
-    width: 42,
-    height: 60,
-    alignment: Alignment.center,
-    decoration: BoxDecoration(
-      color: const Color(0xff3b2014),
-      border: Border.all(color: const Color(0xffffc451), width: 2),
-      borderRadius: BorderRadius.circular(5),
-      image: const DecorationImage(
-        image: AssetImage('assets/images/bang_bang_logo.png'),
-        fit: BoxFit.contain,
-        opacity: .32,
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 52,
+        height: 70,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: BangColors.panel,
+          border: Border.all(color: BangColors.brassDark, width: 2),
+          borderRadius: BorderRadius.circular(7),
+          image: const DecorationImage(
+            image: AssetImage('assets/images/bang_bang_logo.png'),
+            fit: BoxFit.contain,
+            opacity: .36,
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x99000000),
+              blurRadius: 7,
+              offset: Offset(0, 3),
+            ),
+          ],
+        ),
       ),
-    ),
-    child: DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xaa160c08),
-        borderRadius: BorderRadius.circular(3),
+      const SizedBox(height: 4),
+      Text(
+        label,
+        style: const TextStyle(
+          color: BangColors.paper,
+          fontWeight: FontWeight.w900,
+          letterSpacing: .8,
+          fontSize: 9,
+        ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+    ],
+  );
+}
+
+class _BattleTargetBanner extends StatelessWidget {
+  const _BattleTargetBanner({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      const Expanded(child: Divider(color: Color(0x886b8b64))),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Text(
           label,
           style: const TextStyle(
-            color: Color(0xffffd272),
-            fontWeight: FontWeight.w900,
+            color: BangColors.paperDark,
             fontSize: 10,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.7,
           ),
         ),
       ),
-    ),
+      const Expanded(child: Divider(color: Color(0x886b8b64))),
+    ],
   );
 }
 
