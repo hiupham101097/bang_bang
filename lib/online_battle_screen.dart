@@ -715,6 +715,7 @@ class OnlineBattleScreen extends StatelessWidget {
   ]) async {
     var action = 'drawTurnCards';
     String? targetPlayerId = jesseTargetId;
+    var drawSource = 'deck';
     if (characterId == 'kit_carlson') {
       action = 'openKitCarlson';
     } else if (characterId == 'black_jack' || characterId == 'pedro_ramirez') {
@@ -722,10 +723,34 @@ class OnlineBattleScreen extends StatelessWidget {
     } else if (characterId == 'jesse_jones') {
       action = 'drawJesseJones';
     }
+    if (characterId == 'pedro_ramirez' && room.discardTopCardId != null) {
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('PEDRO RAMIREZ'),
+          content: Text(
+            'Lá trên cùng chồng bỏ: ${_cardLabel(room.discardTopCardId!)}. Bạn muốn rút lá đầu từ đâu?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, 'deck'),
+              child: const Text('CHỒNG RÚT'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, 'discard'),
+              child: const Text('CHỒNG BỎ'),
+            ),
+          ],
+        ),
+      );
+      if (choice == null || !context.mounted) return;
+      drawSource = choice;
+    }
     if (!context.mounted) return;
     await _callPayload(context, action, {
       'actionId': 'draw_${DateTime.now().microsecondsSinceEpoch}',
       if (targetPlayerId?.isNotEmpty == true) 'targetPlayerId': targetPlayerId,
+      'drawSource': drawSource,
     });
   }
 
@@ -776,6 +801,91 @@ class OnlineBattleScreen extends StatelessWidget {
     );
     if (selected == null || !context.mounted) return;
     await _callPayload(context, 'useSidKetchum', {'cardIds': selected});
+  }
+
+  Future<void> _chooseRescueCards(
+    BuildContext context,
+    List<String> hand,
+    int requiredHealth,
+    bool isSid,
+    bool beerAllowed,
+  ) async {
+    final selected = await showModalBottomSheet<List<String>>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      builder: (sheetContext) {
+        final picks = <String>{};
+        int healing() {
+          final beers = beerAllowed
+              ? picks.where((card) => card.startsWith('beer_')).length
+              : 0;
+          final sidCards = picks
+              .where((card) => !beerAllowed || !card.startsWith('beer_'))
+              .length;
+          return beers + (isSid ? sidCards ~/ 2 : 0);
+        }
+
+        bool validSelection() {
+          final sidCards = picks.where(
+            (card) => !beerAllowed || !card.startsWith('beer_'),
+          ).length;
+          return healing() == requiredHealth && (!isSid || sidCards.isEven);
+        }
+
+        return StatefulBuilder(
+          builder: (_, setSheetState) => SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'CỨU MẠNG: CẦN $requiredHealth MÁU',
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    isSid
+                        ? 'Beer hồi 1 máu; Sid có thể bỏ mỗi 2 lá khác để hồi 1 máu.'
+                        : 'Chọn đủ Beer để sống sót.',
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: hand.map((cardId) {
+                      final usable =
+                          isSid || (beerAllowed && cardId.startsWith('beer_'));
+                      return FilterChip(
+                        label: Text(_cardLabel(cardId)),
+                        selected: picks.contains(cardId),
+                        onSelected: usable
+                            ? (value) => setSheetState(() {
+                                value
+                                    ? picks.add(cardId)
+                                    : picks.remove(cardId);
+                              })
+                            : null,
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 14),
+                  FilledButton(
+                    onPressed: validSelection()
+                        ? () => Navigator.pop(sheetContext, picks.toList())
+                        : null,
+                    child: Text('DÙNG BÀI · HỒI ${healing()}'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    if (selected == null || !context.mounted) return;
+    await _callPayload(context, 'rescuePlayer', {'cardIds': selected});
   }
 
   // ignore: unused_element
@@ -937,12 +1047,67 @@ class OnlineBattleScreen extends StatelessWidget {
                 .toList();
             final requiredDodges = (action['requiredDodges'] as num? ?? 1)
                 .toInt();
+            if (type == 'rescue') {
+              final requiredHealth = (action['requiredHealth'] as num? ?? 1)
+                  .toInt();
+              final localMember = room.memberFor(playerId ?? '');
+              final isSid = localMember?.characterId == 'sid_ketchum';
+              final beerAllowed =
+                  room.members.where((member) => member.isAlive).length > 2;
+              final beerCount = beerAllowed
+                  ? hand.where((card) => card.startsWith('beer_')).length
+                  : 0;
+              final nonBeerCount = hand.length - beerCount;
+              final possible = isSid
+                  ? math.max(
+                      math.max(beerCount, hand.length ~/ 2),
+                      beerCount + nonBeerCount ~/ 2,
+                    )
+                  : beerCount;
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Text(
+                      isMyResponse
+                          ? 'Bạn đang gục · cần hồi $requiredHealth máu'
+                          : '${room.memberFor(responsePlayerId ?? '')?.displayName ?? 'Người chơi'} đang tự cứu',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xffffd272),
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  if (isMyResponse) ...[
+                    if (possible >= requiredHealth)
+                      FilledButton(
+                        onPressed: () => _chooseRescueCards(
+                          context,
+                          hand,
+                          requiredHealth,
+                          isSid,
+                          beerAllowed,
+                        ),
+                        child: const Text('CỨU'),
+                      ),
+                    const SizedBox(width: 6),
+                    OutlinedButton(
+                      onPressed: () => _callPayload(context, 'rescuePlayer', {
+                        'cardIds': const <String>[],
+                      }),
+                      child: const Text('BỎ CUỘC'),
+                    ),
+                  ],
+                ],
+              );
+            }
             if (type == 'bang') {
               final availableDodges = dodges.take(requiredDodges).toList();
               return AnimatedSwitcher(
                 duration: const Duration(milliseconds: 220),
                 switchInCurve: Curves.easeOutBack,
-                switchOutCurve: Curves.easeIn,
+                switchOutCurve: Curves.easeOut,
                 child: SizedBox(
                   key: ValueKey('${action['id']}_${availableDodges.length}'),
                   height: isMyResponse ? 174 : 92,
@@ -1177,6 +1342,7 @@ class OnlineBattleScreen extends StatelessWidget {
             .firstOrNull ??
         room.hostUid;
     final activePlayer = room.memberFor(room.currentTurnPlayerId ?? '');
+    final localPlayer = room.memberFor(playerId);
     final isMyTurn = playerId == room.currentTurnPlayerId;
     final canDraw = isMyTurn && room.phase == 'turn_start';
     final canPlay = isMyTurn && room.phase == 'play_phase';
@@ -1203,6 +1369,16 @@ class OnlineBattleScreen extends StatelessWidget {
               activePlayer?.characterId,
               targetId,
             )
+          : null,
+      onSid:
+          localPlayer?.characterId == 'sid_ketchum' &&
+              localPlayer!.isAlive &&
+              localPlayer.health < localPlayer.maxHealth &&
+              localPlayer.cardCount >= 2
+          ? () async {
+              final hand = await repository.watchHand(room.id).first;
+              if (context.mounted) await _useSidKetchum(context, hand);
+            }
           : null,
       pendingDock: _pendingActionDock(context, playerId),
     );
@@ -1379,6 +1555,7 @@ class _RoundBattleTable extends StatefulWidget {
     required this.onPlay,
     required this.onTargetedPlay,
     required this.onJesseDraw,
+    required this.onSid,
     required this.pendingDock,
   });
 
@@ -1393,6 +1570,7 @@ class _RoundBattleTable extends StatefulWidget {
   final ValueChanged<String>? onPlay;
   final void Function(String cardId, String targetId)? onTargetedPlay;
   final ValueChanged<String>? onJesseDraw;
+  final VoidCallback? onSid;
   final Widget pendingDock;
 
   @override
@@ -1622,6 +1800,18 @@ class _RoundBattleTableState extends State<_RoundBattleTable> {
                         label: const Text('CUOP 1'),
                       ),
                     ],
+                    if (widget.onSid != null) ...[
+                      const SizedBox(width: 6),
+                      FilledButton.tonal(
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(76, 32),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: widget.onSid,
+                        child: const Text('SID +1'),
+                      ),
+                    ],
                     const SizedBox(width: 10),
                     if (_selectedCardId != null && !_isTargeting) ...[
                       FilledButton.icon(
@@ -1706,9 +1896,9 @@ class _FannedBattleHand extends StatelessWidget {
                   left: index * step,
                   bottom: cards[index] == selectedCardId ? 10 : 0,
                   child: AnimatedScale(
-                    scale: cards[index] == selectedCardId ? 1.1 : 1,
-                    duration: const Duration(milliseconds: 150),
-                    curve: Curves.easeOut,
+                    scale: cards[index] == selectedCardId ? 1.05 : 1,
+                    duration: BangMotion.resolve(context, BangMotion.fast),
+                    curve: BangMotion.curve,
                     child: GameCardWidget(
                       card: _publicGameCard(cards[index]),
                       width: cardWidth,
@@ -1784,8 +1974,8 @@ class _RoundSeat extends StatelessWidget {
     onTap: canTarget ? onTarget : null,
     child: AnimatedScale(
       scale: active || canTarget ? 1.04 : 1,
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOutCubic,
+      duration: BangMotion.resolve(context, BangMotion.fast),
+      curve: BangMotion.curve,
       child: SizedBox(
         width: isLocal ? 160 : 96,
         height: isLocal ? 120 : 82,
@@ -2141,11 +2331,11 @@ class _TinyTableButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-    width: 28,
-    height: 28,
+    width: 36,
+    height: 36,
     child: IconButton.filledTonal(
       padding: EdgeInsets.zero,
-      iconSize: 16,
+      iconSize: 19,
       onPressed: onPressed,
       icon: Icon(icon),
     ),
@@ -2332,7 +2522,7 @@ class _BattleHandDock extends StatelessWidget {
                     ),
                     if (selectedCardId != null)
                       SizedBox(
-                        height: 23,
+                        height: 30,
                         child: FilledButton(
                           onPressed: canConfirm
                               ? () async {
@@ -2342,9 +2532,9 @@ class _BattleHandDock extends StatelessWidget {
                                 }
                               : null,
                           style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 9),
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
                             textStyle: const TextStyle(
-                              fontSize: 9,
+                              fontSize: 10,
                               fontWeight: FontWeight.w900,
                             ),
                           ),
@@ -2402,6 +2592,7 @@ class _BattleHandDock extends StatelessWidget {
 }
 
 String? _latestPublicCardId(OnlineRoom room) {
+  if (room.lastPlayedCardId != null) return room.lastPlayedCardId;
   if (room.publicLog.isNotEmpty) {
     final parts = room.publicLog.last.split(':');
     if (parts.length > 2 && parts[2].isNotEmpty) return parts[2];
@@ -2434,10 +2625,13 @@ class _CentralActionArea extends StatelessWidget {
       final actionCardId =
           action?['cardId'] as String? ?? _latestPublicCardId(room);
       final actionType = action?['actionType'] as String?;
-      final actor = room.memberFor(action?['actorPlayerId'] as String? ?? '');
+      final actor = room.memberFor(
+        action?['actorPlayerId'] as String? ?? room.lastActionActorId ?? '',
+      );
       final target = room.memberFor(
         action?['currentTargetId'] as String? ??
             action?['targetPlayerId'] as String? ??
+            room.lastActionTargetId ??
             '',
       );
       final summary = action == null
@@ -2656,11 +2850,11 @@ String _actionLabel(String? actionType) => switch (actionType) {
 };
 
 String _battleRoleLabel(String role) => switch (role) {
-  'sheriff' => 'SHERIFF',
-  'deputy' => 'DEPUTY',
-  'guardian' => 'GUARD',
-  'outlaw' || 'raider' => 'RAIDER',
-  'renegade' || 'traitor' => 'TRAITOR',
+  'sheriff' => 'CẢNH SÁT TRƯỞNG',
+  'deputy' => 'PHÓ CẢNH SÁT',
+  'guardian' => 'HỘ VỆ',
+  'outlaw' || 'raider' => 'CƯỚP',
+  'renegade' || 'traitor' => 'GIÁN ĐIỆP',
   _ => role.toUpperCase(),
 };
 
@@ -2799,37 +2993,26 @@ class _PlayerSeat extends StatefulWidget {
 }
 
 class _PlayerSeatState extends State<_PlayerSeat> {
-  Timer? _pulse;
   Timer? _deathEffectTimer;
   Timer? _bangEffectTimer;
-  bool _bright = true;
   bool _showDeathEffect = false;
   bool _showBangEffect = false;
 
   @override
-  void initState() {
-    super.initState();
-    _pulse = Timer.periodic(const Duration(milliseconds: 650), (_) {
-      if (mounted && widget.isCurrent) setState(() => _bright = !_bright);
-    });
-  }
-
-  @override
   void didUpdateWidget(covariant _PlayerSeat oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!widget.isCurrent) _bright = true;
     if (oldWidget.member.isAlive && !widget.member.isAlive) {
       GameAudio.instance.playSfx('lose');
       _showDeathEffect = true;
       _deathEffectTimer?.cancel();
-      _deathEffectTimer = Timer(const Duration(milliseconds: 1250), () {
+      _deathEffectTimer = Timer(const Duration(milliseconds: 650), () {
         if (mounted) setState(() => _showDeathEffect = false);
       });
     }
     if (widget.isBangTarget && oldWidget.bangEventId != widget.bangEventId) {
       _showBangEffect = true;
       _bangEffectTimer?.cancel();
-      _bangEffectTimer = Timer(const Duration(milliseconds: 900), () {
+      _bangEffectTimer = Timer(const Duration(milliseconds: 350), () {
         if (mounted) setState(() => _showBangEffect = false);
       });
     }
@@ -2837,7 +3020,6 @@ class _PlayerSeatState extends State<_PlayerSeat> {
 
   @override
   void dispose() {
-    _pulse?.cancel();
     _deathEffectTimer?.cancel();
     _bangEffectTimer?.cancel();
     super.dispose();
@@ -2905,11 +3087,7 @@ class _PlayerSeatState extends State<_PlayerSeat> {
               decoration: BoxDecoration(
                 color: member.isAlive
                     ? active
-                          ? Color.lerp(
-                              const Color(0xff5a3116),
-                              const Color(0xff8a521d),
-                              _bright ? 1 : .25,
-                            )
+                          ? const Color(0xff74431d)
                           : const Color(0xff2a1811)
                     : const Color(0xff16100d),
                 shape: BoxShape.circle,
@@ -2921,7 +3099,7 @@ class _PlayerSeatState extends State<_PlayerSeat> {
                       : const Color(0xff63432e),
                   width: sheriff || active ? 2.5 : 1,
                 ),
-                boxShadow: active && _bright
+                boxShadow: active
                     ? const [
                         BoxShadow(color: Color(0x99ffb12e), blurRadius: 10),
                       ]
@@ -3054,24 +3232,22 @@ class _BangEvent {
 }
 
 String _seatAvatarAsset(RoomMember member) {
-  return switch (member.characterId) {
-    'doctor_lee' => 'assets/images/doctor_lee.png',
-    'iron_rose' ||
-    'rose_doolan' ||
-    'rose_oolan' => 'assets/images/iron_rose.png',
-    'lucky_duke' => 'assets/images/characters/lucky_duke.png',
-    'quick_jack' || 'black_jack' => 'assets/images/quick_jack.png',
-    _ => switch (member.revealedRole) {
-      'sheriff' => 'assets/images/role_sheriff.png',
-      'deputy' => 'assets/images/role_deputy.png',
-      'guardian' => 'assets/images/role_guardian.png',
-      'outlaw' || 'raider' => 'assets/images/role_raider.png',
-      'renegade' || 'traitor' => 'assets/images/role_traitor.png',
-      _ =>
-        member.isBot
-            ? 'assets/images/role_raider.png'
-            : 'assets/images/role_deputy.png',
-    },
+  if (member.characterId != null) {
+    final fileName = member.characterId == 'rose_doolan'
+        ? 'rose_oolan'
+        : member.characterId!;
+    return 'assets/images/characters/$fileName.png';
+  }
+  return switch (member.revealedRole) {
+    'sheriff' => 'assets/images/role_sheriff.png',
+    'deputy' => 'assets/images/role_deputy.png',
+    'guardian' => 'assets/images/role_guardian.png',
+    'outlaw' || 'raider' => 'assets/images/role_raider.png',
+    'renegade' || 'traitor' => 'assets/images/role_traitor.png',
+    _ =>
+      member.isBot
+          ? 'assets/images/role_raider.png'
+          : 'assets/images/role_deputy.png',
   };
 }
 
@@ -3102,7 +3278,7 @@ class _PublicCardStage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AnimatedSwitcher(
-    duration: const Duration(milliseconds: 350),
+    duration: BangMotion.resolve(context, BangMotion.standard),
     transitionBuilder: (child, animation) => ScaleTransition(
       scale: CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
       child: FadeTransition(opacity: animation, child: child),

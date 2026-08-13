@@ -127,6 +127,9 @@ class OnlineRoom {
     this.publicLog = const [],
     this.discardTopCardId,
     this.dyingPlayerId,
+    this.lastPlayedCardId,
+    this.lastActionActorId,
+    this.lastActionTargetId,
   });
 
   final String id;
@@ -148,6 +151,9 @@ class OnlineRoom {
   final List<String> publicLog;
   final String? discardTopCardId;
   final String? dyingPlayerId;
+  final String? lastPlayedCardId;
+  final String? lastActionActorId;
+  final String? lastActionTargetId;
 
   int get humanCount => members.where((member) => !member.isBot).length;
   int get botCount => members.where((member) => member.isBot).length;
@@ -184,6 +190,9 @@ class OnlineRoom {
     List<String>? publicLog,
     String? discardTopCardId,
     String? dyingPlayerId,
+    String? lastPlayedCardId,
+    String? lastActionActorId,
+    String? lastActionTargetId,
   }) => OnlineRoom(
     id: id,
     code: code,
@@ -205,6 +214,9 @@ class OnlineRoom {
     publicLog: publicLog ?? this.publicLog,
     discardTopCardId: discardTopCardId ?? this.discardTopCardId,
     dyingPlayerId: dyingPlayerId ?? this.dyingPlayerId,
+    lastPlayedCardId: lastPlayedCardId ?? this.lastPlayedCardId,
+    lastActionActorId: lastActionActorId ?? this.lastActionActorId,
+    lastActionTargetId: lastActionTargetId ?? this.lastActionTargetId,
   );
 }
 
@@ -232,11 +244,7 @@ class PrivateSetupState {
 }
 
 class SetupChoice {
-  const SetupChoice({
-    required this.id,
-    required this.value,
-    this.pickedBy,
-  });
+  const SetupChoice({required this.id, required this.value, this.pickedBy});
 
   final String id;
   final String value;

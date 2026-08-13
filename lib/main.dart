@@ -8,6 +8,7 @@ import 'package:bangbang/config/game_backend.dart';
 import 'package:bangbang/data/online_room_repository.dart';
 import 'package:bangbang/online_lobby.dart';
 import 'package:bangbang/splash_screen.dart';
+import 'package:bangbang/ui/bang_ui.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,10 +16,6 @@ import 'package:flutter/services.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
-  ]);
   runApp(const BangBangApp());
 }
 
@@ -34,29 +31,7 @@ class BangBangApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
     debugShowCheckedModeBanner: false,
-    theme: ThemeData(
-      useMaterial3: true,
-      scaffoldBackgroundColor: const Color(0xff160c08),
-      colorScheme: const ColorScheme.dark(
-        surface: Color(0xff160c08),
-        onSurface: Colors.white,
-        primary: Color(0xffffc451),
-        onPrimary: Color(0xff160c08),
-      ),
-      textTheme: const TextTheme(bodyMedium: TextStyle(color: Colors.white)),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: Color(0xff160c08),
-        foregroundColor: Colors.white,
-        toolbarHeight: 28,
-        titleTextStyle: TextStyle(
-          color: Colors.white,
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-        ),
-        elevation: 0,
-        centerTitle: false,
-      ),
-    ),
+    theme: bangTheme(),
     home: SplashScreen(repository: _rooms),
   );
 }
@@ -106,9 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       await Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (_) => OnlineLobbyScreen(repository: widget.repository),
-        ),
+        bangRoute(OnlineLobbyScreen(repository: widget.repository)),
       );
     } catch (error) {
       if (!mounted) return;
@@ -122,149 +95,146 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: Stack(
-      children: [
-        Positioned.fill(
-          child: Image.asset(
-            'assets/images/wild_west_town.png',
-            fit: BoxFit.cover,
-          ),
-        ),
-        Positioned.fill(
-          child: ColoredBox(color: Colors.black.withValues(alpha: .45)),
-        ),
-        SafeArea(
-          child: SingleChildScrollView(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 520),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text(
-                      'BANG BANG',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 34,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 3,
-                      ),
-                    ),
-                    const Text(
-                      'HỖN CHIẾN MIỀN VIỄN TÂY',
-                      style: TextStyle(
-                        color: Color(0xffffd272),
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 2,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    _menu(
-                      'BẮT ĐẦU',
-                      Icons.play_arrow_rounded,
-                      _openLobby,
-                      loading: _openingLobby,
-                    ),
-                    _menu(
-                      'NHIỆM VỤ',
-                      Icons.emoji_events_outlined,
-                      () => _dialog(
-                        'Nhiệm vụ hôm nay',
-                        const Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('☐ Thắng một ván bất kỳ'),
-                            SizedBox(height: 8),
-                            Text('☐ Dùng BANG! 5 lần'),
-                            SizedBox(height: 8),
-                            Text('☐ Sống sót với 1 máu'),
-                          ],
-                        ),
-                      ),
-                    ),
-                    _menu(
-                      'HƯỚNG DẪN',
-                      Icons.menu_book_outlined,
-                      () => _dialog(
-                        'Hướng dẫn nhanh',
-                        const Text(
-                          'Rút bài → chọn bài → chạm mục tiêu. BANG gây 1 sát thương; NÉ chặn BANG. Kính ngắm tăng tầm, Ngựa khiến đối thủ xa hơn. Cảnh trưởng và Vệ sĩ loại Kẻ cướp/Kẻ phản bội; Kẻ phản bội phải là người cuối cùng.',
-                        ),
-                      ),
-                    ),
-                    _menu(
-                      'THOÁT',
-                      Icons.power_settings_new,
-                      SystemNavigator.pop,
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
+    body: BangScenicBackground(
+      child: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 700;
+            final portrait = constraints.maxHeight > constraints.maxWidth;
+            final content = <Widget>[
+              Flexible(
+                flex: compact ? 4 : 5,
+                child: RepaintBoundary(
+                  child: Image.asset(
+                    'assets/images/bang_bang_logo.png',
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.medium,
+                  ),
+                ),
+              ),
+              SizedBox(width: compact ? 12 : 28, height: 12),
+              Flexible(
+                flex: 4,
+                child: BangPanel(
+                  padding: EdgeInsets.all(compact ? 14 : 20),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 360),
+                    child: Column(
                       mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        IconButton(
-                          tooltip: 'Kiểm tra thẻ bài',
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const CardPreviewScreen(),
-                            ),
+                        const Text(
+                          'HỖN CHIẾN MIỀN VIỄN TÂY',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: BangColors.paper,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.6,
                           ),
-                          icon: const Icon(Icons.style, color: Colors.white),
                         ),
-                        IconButton(
-                          onPressed: () async {
-                            await GameAudio.instance.toggle();
-                            if (mounted) setState(() {});
-                          },
-                          icon: Icon(
-                            GameAudio.instance.enabled
-                                ? Icons.volume_up
-                                : Icons.volume_off,
-                            color: Colors.white,
-                          ),
+                        const SizedBox(height: 16),
+                        BangButton(
+                          label: 'CHƠI ONLINE',
+                          icon: Icons.public_rounded,
+                          loading: _openingLobby,
+                          onPressed: _openLobby,
+                          minWidth: double.infinity,
+                        ),
+                        const SizedBox(height: 9),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: BangButton(
+                                label: 'NHIỆM VỤ',
+                                icon: Icons.emoji_events_outlined,
+                                secondary: true,
+                                minWidth: 0,
+                                onPressed: () => _dialog(
+                                  'Nhiệm vụ hôm nay',
+                                  const Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text('☐ Thắng một ván bất kỳ'),
+                                      SizedBox(height: 8),
+                                      Text('☐ Dùng BANG! 5 lần'),
+                                      SizedBox(height: 8),
+                                      Text('☐ Sống sót với 1 máu'),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 9),
+                            Expanded(
+                              child: BangButton(
+                                label: 'LUẬT CHƠI',
+                                icon: Icons.menu_book_outlined,
+                                secondary: true,
+                                minWidth: 0,
+                                onPressed: () => _dialog(
+                                  'Hướng dẫn nhanh',
+                                  const Text(
+                                    'Rút bài → chọn bài → chạm mục tiêu. BANG gây 1 sát thương; NÉ chặn BANG. Trang bị giúp tăng tầm hoặc phòng thủ. Theo dõi khu giữa bàn để biết ai vừa đánh lá nào vào ai.',
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-  Widget _menu(
-    String text,
-    IconData icon,
-    VoidCallback? action, {
-    bool loading = false,
-  }) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 4),
-    child: SizedBox(
-      width: 265,
-      height: 44,
-      child: ElevatedButton.icon(
-        onPressed: loading ? null : action,
-        icon: loading
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : Icon(icon),
-        label: Text(
-          text,
-          style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1),
-        ),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xffe9ba57),
-          foregroundColor: const Color(0xff43200d),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: const BorderSide(color: Color(0xffffe4a0), width: 2),
-          ),
+            ];
+            return Stack(
+              children: [
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 1080),
+                      child: portrait
+                          ? Column(children: content)
+                          : Row(children: content),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  right: 14,
+                  top: 10,
+                  child: Row(
+                    children: [
+                      BangIconButton(
+                        tooltip: 'Bộ sưu tập thẻ',
+                        icon: Icons.style_outlined,
+                        onPressed: () => Navigator.push(
+                          context,
+                          bangRoute(const CardPreviewScreen()),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      BangIconButton(
+                        tooltip: GameAudio.instance.enabled
+                            ? 'Tắt âm thanh'
+                            : 'Bật âm thanh',
+                        icon: GameAudio.instance.enabled
+                            ? Icons.volume_up_rounded
+                            : Icons.volume_off_rounded,
+                        onPressed: () async {
+                          await GameAudio.instance.toggle();
+                          if (mounted) setState(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     ),
@@ -494,84 +464,103 @@ class _GameTableState extends State<GameTable> {
   );
   Widget _player(GamePlayer p) => GestureDetector(
     onTap: choosingTarget && p.alive && !p.isHuman ? () => _play(p) : null,
-    child: Opacity(
-      opacity: p.alive ? 1 : .42,
-      child: Container(
-        width: 150,
-        padding: const EdgeInsets.all(7),
-        decoration: BoxDecoration(
-          color: const Color(0xff25130d).withValues(alpha: .92),
-          borderRadius: BorderRadius.circular(15),
-          border: Border.all(
-            color: choosingTarget && !p.isHuman && p.alive
-                ? const Color(0xffff5c43)
-                : p.role == PlayerRole.sheriff
-                ? const Color(0xffffcf5b)
-                : Colors.white70,
-            width: choosingTarget && !p.isHuman && p.alive ? 3 : 2,
+    child: AnimatedScale(
+      duration: BangMotion.resolve(context, BangMotion.standard),
+      curve: BangMotion.curve,
+      scale: choosingTarget && !p.isHuman && p.alive ? 1.04 : 1,
+      child: AnimatedOpacity(
+        duration: BangMotion.resolve(context, BangMotion.fast),
+        opacity: p.alive ? 1 : .42,
+        child: Container(
+          width: 150,
+          padding: const EdgeInsets.all(7),
+          decoration: BoxDecoration(
+            color: const Color(0xff25130d).withValues(alpha: .92),
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(
+              color: choosingTarget && !p.isHuman && p.alive
+                  ? const Color(0xffff5c43)
+                  : p.role == PlayerRole.sheriff
+                  ? const Color(0xffffcf5b)
+                  : Colors.white70,
+              width: choosingTarget && !p.isHuman && p.alive ? 3 : 2,
+            ),
           ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(_face(p), style: const TextStyle(fontSize: 27)),
-                const SizedBox(width: 5),
-                Expanded(
-                  child: Text(
-                    p.name,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  ClipOval(
+                    child: Image.asset(
+                      _face(p),
+                      width: 34,
+                      height: 34,
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.low,
+                      cacheWidth: 68,
                     ),
                   ),
-                ),
-              ],
-            ),
-            Row(
-              children: [
-                Image.asset(
-                  'assets/images/health_bullet.png',
-                  width: 15,
-                  height: 15,
-                ),
-                Expanded(
-                  child: Text(
-                    ' ${p.health}/${p.maxHealth}  🂠 ${p.hand.length}  ↔ ${p.alive ? game.distance(game.human, p) : '-'}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xffffd2cb),
-                      fontSize: 12,
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      p.name,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
+                ],
+              ),
+              Row(
+                children: [
+                  Image.asset(
+                    'assets/images/health_bullet.png',
+                    width: 15,
+                    height: 15,
+                  ),
+                  Expanded(
+                    child: Text(
+                      ' ${p.health}/${p.maxHealth}  🂠 ${p.hand.length}  ↔ ${p.alive ? game.distance(game.human, p) : '-'}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xffffd2cb),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (p.equipment.isNotEmpty)
+                Text(
+                  p.equipment.map((e) => GameCard(e).name).join(', '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Color(0xffffd458), fontSize: 9),
                 ),
-              ],
-            ),
-            if (p.equipment.isNotEmpty)
-              Text(
-                p.equipment.map((e) => GameCard(e).name).join(', '),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Color(0xffffd458), fontSize: 9),
-              ),
-            if (revealRoles || p.role == PlayerRole.sheriff)
-              Text(
-                _role(p.role),
-                style: const TextStyle(color: Color(0xffffd458), fontSize: 10),
-              ),
-          ],
+              if (revealRoles || !p.alive || p.role == PlayerRole.sheriff)
+                Text(
+                  _role(p.role),
+                  style: const TextStyle(
+                    color: Color(0xffffd458),
+                    fontSize: 10,
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     ),
   );
   String _face(GamePlayer p) => switch (p.name) {
-    'Lucky Joe' => '🤠',
-    'Iron Rose' => '👩‍🦰',
-    'Quick Jack' => '🧔',
-    _ => '🧑‍⚕️',
+    'Lucky Joe' => 'assets/images/characters/lucky_duke.png',
+    'Iron Rose' => 'assets/images/characters/rose_oolan.png',
+    'Quick Jack' => 'assets/images/characters/black_jack.png',
+    'Doctor Lee' => 'assets/images/characters/sid_ketchum.png',
+    _ => 'assets/images/role_deputy.png',
   };
   String _role(PlayerRole r) => switch (r) {
     PlayerRole.sheriff => 'CẢNH TRƯỞNG',
@@ -626,11 +615,19 @@ class _GameTableState extends State<GameTable> {
       ],
     ),
   );
-  Widget _card(GameCard c, bool active) => AnimatedContainer(
-    duration: const Duration(milliseconds: 120),
-    width: 87,
-    margin: EdgeInsets.only(top: active ? 0 : 10, bottom: active ? 8 : 0),
-    child: GameCardWidget(card: c, width: 87, isSelected: active),
+  Widget _card(GameCard c, bool active) => AnimatedSlide(
+    duration: BangMotion.resolve(context, BangMotion.fast),
+    curve: BangMotion.curve,
+    offset: active ? const Offset(0, -.08) : Offset.zero,
+    child: AnimatedScale(
+      duration: BangMotion.resolve(context, BangMotion.fast),
+      curve: BangMotion.curve,
+      scale: active ? 1.04 : 1,
+      child: SizedBox(
+        width: 87,
+        child: GameCardWidget(card: c, width: 87, isSelected: active),
+      ),
+    ),
   );
   Widget _victory() => Positioned.fill(
     child: ColoredBox(

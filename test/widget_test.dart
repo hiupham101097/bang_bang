@@ -6,9 +6,8 @@ void main() {
     await tester.pumpWidget(const BangBangApp());
     await tester.pump(const Duration(milliseconds: 2500));
     await tester.pumpAndSettle();
-    expect(find.text('BANG BANG'), findsOneWidget);
-    expect(find.text('BẮT ĐẦU'), findsOneWidget);
+    expect(find.text('CHƠI ONLINE'), findsOneWidget);
+    expect(find.text('LUẬT CHƠI'), findsOneWidget);
     expect(find.text('NHIỆM VỤ'), findsOneWidget);
-    expect(find.text('HƯỚNG DẪN'), findsOneWidget);
   });
 }

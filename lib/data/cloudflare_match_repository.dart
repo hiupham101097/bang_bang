@@ -245,7 +245,10 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
           'currentTargetId': item['targetId'],
           'responseDeadlineAt': item['deadline'],
           'requiredDodges': item['requiredDodges'],
+          'cardId': item['cardId'],
           'openedCardIds': item['openedCardIds'],
+          'choices': item['choices'],
+          'requiredHealth': item['requiredHealth'],
           'currentPickerId': item['currentPickerId'],
         },
       ];
@@ -287,6 +290,9 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
       bangUsedThisTurn: (data['bangUsedThisTurn'] as num?)?.toInt() ?? 0,
       publicLog: List<String>.from(data['publicLog'] as List? ?? const []),
       discardTopCardId: (data['discard'] as List?)?.lastOrNull as String?,
+      lastPlayedCardId: data['lastPlayedCardId'] as String?,
+      lastActionActorId: data['lastActionActorId'] as String?,
+      lastActionTargetId: data['lastActionTargetId'] as String?,
       members: rawPlayers.map(_memberFromJson).toList(),
     );
     return room;
@@ -497,6 +503,9 @@ class CloudflareMatchRepository implements OnlineRoomRepository {
       'resolveTargetCard' => 'play',
       'openGeneralStore' => 'play',
       'chooseGeneralStoreCard' => 'choose_general_store',
+      'chooseKitCarlson' => 'choose_kit_carlson',
+      'chooseLuckyDukeJudgment' => 'choose_lucky_duke',
+      'rescuePlayer' => 'rescue',
       'useSidKetchum' => 'sid_ketchum',
       'respondToAction' => 'respond_bang',
       'acceptBangDamage' => 'respond_bang',

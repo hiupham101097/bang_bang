@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'data/online_room_repository.dart';
 import 'domain/online_models.dart';
+import 'ui/bang_ui.dart';
 
 class GameSetupScreen extends StatefulWidget {
   const GameSetupScreen({
@@ -21,26 +22,9 @@ class GameSetupScreen extends StatefulWidget {
 }
 
 class _GameSetupScreenState extends State<GameSetupScreen> {
-  late final Timer _ticker;
   String? _inspectedCharacterId;
   String? _pendingRoleCardId;
   String? _pendingCharacterCardId;
-
-  @override
-  void initState() {
-    super.initState();
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) {
-        setState(() {});
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _ticker.cancel();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -252,15 +236,51 @@ class _GameSetupScreenState extends State<GameSetupScreen> {
   }
 }
 
-class _SetupHeader extends StatelessWidget {
+class _SetupHeader extends StatefulWidget {
   const _SetupHeader({required this.phase, required this.deadline});
 
   final String phase;
   final DateTime? deadline;
 
   @override
+  State<_SetupHeader> createState() => _SetupHeaderState();
+}
+
+class _SetupHeaderState extends State<_SetupHeader> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SetupHeader oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.deadline != widget.deadline) _syncTimer();
+  }
+
+  void _syncTimer() {
+    _timer?.cancel();
+    if (widget.deadline == null) return;
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final seconds = deadline?.difference(DateTime.now()).inSeconds.clamp(0, 60);
+    final seconds = widget.deadline
+        ?.difference(DateTime.now())
+        .inSeconds
+        .clamp(0, 60);
     final urgent = seconds != null && seconds <= 10;
     return SizedBox(
       height: 28,
@@ -270,7 +290,7 @@ class _SetupHeader extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              _phaseTitle(phase),
+              _phaseTitle(widget.phase),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
@@ -375,10 +395,13 @@ class _SetupSeat extends StatelessWidget {
         children: [
           Expanded(
             child: Image.asset(
-              member.isBot
-                  ? 'assets/images/role_raider.png'
-                  : 'assets/images/role_deputy.png',
+              member.characterId == null
+                  ? member.isBot
+                        ? 'assets/images/role_raider.png'
+                        : 'assets/images/role_deputy.png'
+                  : _characterAsset(member.characterId!),
               fit: BoxFit.contain,
+              filterQuality: FilterQuality.low,
             ),
           ),
           Text(
@@ -696,17 +719,23 @@ class _RoleDeck extends StatelessWidget {
               final mine = playerId != null && card.pickedBy == playerId;
               final pending = card.id == pendingCardId;
               final enabled = canPick && !card.isPicked;
-              return Opacity(
+              return AnimatedOpacity(
+                duration: BangMotion.resolve(context, BangMotion.fast),
                 opacity: !card.isPicked || mine ? 1 : .34,
-                child: InkWell(
-                  key: ValueKey('role_card_${card.id}'),
-                  onTap: enabled ? () => onPick(card.id) : null,
-                  borderRadius: BorderRadius.circular(5),
-                  child: _CardBack(
-                    width: cardWidth,
-                    height: cardHeight,
-                    label: '',
-                    highlighted: mine || pending,
+                child: AnimatedScale(
+                  duration: BangMotion.resolve(context, BangMotion.standard),
+                  curve: BangMotion.curve,
+                  scale: mine || pending ? 1.06 : 1,
+                  child: InkWell(
+                    key: ValueKey('role_card_${card.id}'),
+                    onTap: enabled ? () => onPick(card.id) : null,
+                    borderRadius: BorderRadius.circular(5),
+                    child: _CardBack(
+                      width: cardWidth,
+                      height: cardHeight,
+                      label: '',
+                      highlighted: mine || pending,
+                    ),
                   ),
                 ),
               );
@@ -749,17 +778,23 @@ class _CharacterDeck extends StatelessWidget {
             final selected = playerId != null && card.pickedBy == playerId;
             final pending = card.id == pendingCardId;
             final enabled = !card.isPicked;
-            return Opacity(
+            return AnimatedOpacity(
+              duration: BangMotion.resolve(context, BangMotion.fast),
               opacity: enabled || selected ? 1 : .32,
-              child: InkWell(
-                key: ValueKey('character_card_${card.id}'),
-                onTap: enabled ? () => onPick(card.id) : null,
-                borderRadius: BorderRadius.circular(5),
-                child: _CardBack(
-                  width: cardWidth,
-                  height: cardHeight,
-                  label: '',
-                  highlighted: selected || pending,
+              child: AnimatedScale(
+                duration: BangMotion.resolve(context, BangMotion.standard),
+                curve: BangMotion.curve,
+                scale: selected || pending ? 1.06 : 1,
+                child: InkWell(
+                  key: ValueKey('character_card_${card.id}'),
+                  onTap: enabled ? () => onPick(card.id) : null,
+                  borderRadius: BorderRadius.circular(5),
+                  child: _CardBack(
+                    width: cardWidth,
+                    height: cardHeight,
+                    label: '',
+                    highlighted: selected || pending,
+                  ),
                 ),
               ),
             );
@@ -814,7 +849,7 @@ class _SetupPickConfirm extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(
-                height: 30,
+                height: 40,
                 child: OutlinedButton(
                   onPressed: onCancel,
                   child: const Text('HUY'),
@@ -822,7 +857,7 @@ class _SetupPickConfirm extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               SizedBox(
-                height: 30,
+                height: 40,
                 child: FilledButton(
                   onPressed: onConfirm,
                   child: const Text('CHON'),
@@ -935,9 +970,9 @@ String _phaseTitle(String phase) => switch (phase) {
 
 List<String> _setupRoleDeck(int playerCount) {
   final base = switch (playerCount.clamp(4, 8)) {
-    4 => ['sheriff', 'deputy', 'raider', 'raider'],
+    4 => ['sheriff', 'traitor', 'raider', 'raider'],
     5 => ['sheriff', 'deputy', 'raider', 'raider', 'traitor'],
-    6 => ['sheriff', 'deputy', 'deputy', 'raider', 'raider', 'traitor'],
+    6 => ['sheriff', 'deputy', 'raider', 'raider', 'raider', 'traitor'],
     7 => [
       'sheriff',
       'deputy',
@@ -951,10 +986,10 @@ List<String> _setupRoleDeck(int playerCount) {
       'sheriff',
       'deputy',
       'deputy',
-      'guardian',
       'raider',
       'raider',
       'raider',
+      'traitor',
       'traitor',
     ],
   };
@@ -982,13 +1017,13 @@ String _characterAsset(String id) => switch (id) {
 };
 
 String _roleLabel(String role) => switch (role) {
-  'sheriff' => 'Sheriff',
-  'deputy' => 'Deputy',
-  'guardian' => 'Guardian',
-  'blank' => 'Dang gan vai tro',
-  'outlaw' || 'raider' => 'Raider',
-  'renegade' || 'traitor' => 'Traitor',
-  _ => 'Role',
+  'sheriff' => 'Cảnh sát trưởng',
+  'deputy' => 'Phó cảnh sát',
+  'guardian' => 'Hộ vệ',
+  'blank' => 'Đang gán vai trò',
+  'outlaw' || 'raider' => 'Cướp',
+  'renegade' || 'traitor' => 'Gián điệp',
+  _ => 'Vai trò',
 };
 
 String _characterName(String id) => id

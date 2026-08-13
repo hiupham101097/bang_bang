@@ -159,9 +159,22 @@ class GameEngine {
     if (playerCount == 4) {
       return [
         PlayerRole.sheriff,
+        PlayerRole.renegade,
+        PlayerRole.outlaw,
+        PlayerRole.outlaw,
+      ];
+    }
+
+    if (playerCount == 8) {
+      return const [
+        PlayerRole.sheriff,
+        PlayerRole.deputy,
         PlayerRole.deputy,
         PlayerRole.outlaw,
         PlayerRole.outlaw,
+        PlayerRole.outlaw,
+        PlayerRole.renegade,
+        PlayerRole.renegade,
       ];
     }
 
@@ -360,8 +373,28 @@ class GameEngine {
   void _damage(GamePlayer target, GamePlayer source) {
     target.health--;
     if (target.health <= 0) {
+      while (target.health <= 0 &&
+          players.where((player) => player.alive).length > 2) {
+        final beer = target.hand.indexWhere(
+          (card) => card.type == CardType.heal,
+        );
+        if (beer < 0) break;
+        discard.add(target.hand.removeAt(beer));
+        target.health++;
+      }
+      if (target.health > 0) return;
       target.alive = false;
       target.health = 0;
+      discard.addAll(target.hand);
+      target.hand.clear();
+      target.equipment.clear();
+      if (target.role == PlayerRole.outlaw) _draw(source, 3);
+      if (source.role == PlayerRole.sheriff &&
+          target.role == PlayerRole.deputy) {
+        discard.addAll(source.hand);
+        source.hand.clear();
+        source.equipment.clear();
+      }
       if (bountyTarget == target) _draw(source, 2);
     }
   }

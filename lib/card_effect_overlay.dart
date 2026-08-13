@@ -33,6 +33,9 @@ class _SpriteSheetFrame extends StatelessWidget {
               width: size * 2,
               height: size * 2,
               fit: BoxFit.fill,
+              filterQuality: FilterQuality.low,
+              cacheWidth: (size * 2 * MediaQuery.devicePixelRatioOf(context))
+                  .round(),
             ),
           ),
         ),
@@ -67,8 +70,8 @@ class _DodgeEffectOverlayState extends State<DodgeEffectOverlay>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 560),
-  )..repeat();
+    duration: const Duration(milliseconds: 240),
+  )..forward();
 
   @override
   void dispose() {
@@ -79,12 +82,15 @@ class _DodgeEffectOverlayState extends State<DodgeEffectOverlay>
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: _controller,
-    builder: (context, _) => Transform.translate(
-      offset: Offset((_controller.value - .5) * 10, 0),
-      child: _SpriteSheetFrame(
-        asset: 'assets/images/effects/dodge_sprite.png',
-        frame: _spriteFrame(_controller),
-        size: widget.size,
+    builder: (context, _) => Opacity(
+      opacity: _controller.value < .98 ? 1 : 0,
+      child: Transform.translate(
+        offset: Offset((_controller.value - .5) * 10, 0),
+        child: _SpriteSheetFrame(
+          asset: 'assets/images/effects/dodge_sprite.png',
+          frame: _spriteFrame(_controller),
+          size: widget.size,
+        ),
       ),
     ),
   );
@@ -111,7 +117,7 @@ class _DeathEffectOverlayState extends State<DeathEffectOverlay>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 950),
+    duration: const Duration(milliseconds: 500),
   )..forward();
 
   @override
@@ -158,8 +164,8 @@ class _HealEffectOverlayState extends State<HealEffectOverlay>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 760),
-  )..repeat(reverse: true);
+    duration: const Duration(milliseconds: 280),
+  )..forward();
 
   @override
   void dispose() {
@@ -173,7 +179,7 @@ class _HealEffectOverlayState extends State<HealEffectOverlay>
     builder: (context, _) => Transform.scale(
       scale: .84 + _controller.value * .22,
       child: Opacity(
-        opacity: .55 + _controller.value * .45,
+        opacity: _controller.value < .98 ? .55 + _controller.value * .45 : 0,
         child: Icon(
           Icons.favorite,
           color: const Color(0xff77e78b),
@@ -189,35 +195,8 @@ class _AreaAttackEffectOverlayState extends State<AreaAttackEffectOverlay>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 480),
-  )..repeat();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-    animation: _controller,
-    builder: (context, _) => Transform.scale(
-      scale: .9 + _controller.value * .16,
-      child: _SpriteSheetFrame(
-        asset: 'assets/images/effects/area_attack_sprite.png',
-        frame: _spriteFrame(_controller),
-        size: widget.size,
-      ),
-    ),
-  );
-}
-
-class _BangEffectOverlayState extends State<BangEffectOverlay>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 440),
-  )..repeat();
+    duration: const Duration(milliseconds: 260),
+  )..forward();
 
   @override
   void dispose() {
@@ -229,7 +208,37 @@ class _BangEffectOverlayState extends State<BangEffectOverlay>
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: _controller,
     builder: (context, _) => Opacity(
-      opacity: 0.72 + _controller.value * 0.28,
+      opacity: _controller.value < .98 ? 1 : 0,
+      child: Transform.scale(
+        scale: .9 + _controller.value * .16,
+        child: _SpriteSheetFrame(
+          asset: 'assets/images/effects/area_attack_sprite.png',
+          frame: _spriteFrame(_controller),
+          size: widget.size,
+        ),
+      ),
+    ),
+  );
+}
+
+class _BangEffectOverlayState extends State<BangEffectOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+  )..forward();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _controller,
+    builder: (context, _) => Opacity(
+      opacity: _controller.value < .98 ? 0.72 + _controller.value * 0.28 : 0,
       child: Transform.scale(
         scale: 0.9 + _controller.value * 0.12,
         child: _SpriteSheetFrame(

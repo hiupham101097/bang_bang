@@ -10,17 +10,20 @@ void main() {
         game.players.where((p) => p.role == PlayerRole.sheriff),
         hasLength(1),
       );
-      expect(game.players.where((p) => p.role == PlayerRole.renegade), isEmpty);
+      expect(
+        game.players.where((p) => p.role == PlayerRole.renegade),
+        hasLength(1),
+      );
       expect(game.human.hand, hasLength(4));
     });
 
     test('builds the official role table for rooms of 4 through 8', () {
       final expected = {
-        4: [1, 1, 2, 0],
+        4: [1, 0, 2, 1],
         5: [1, 1, 2, 1],
         6: [1, 1, 3, 1],
         7: [1, 2, 3, 1],
-        8: [1, 2, 4, 1],
+        8: [1, 2, 3, 2],
       };
       for (final entry in expected.entries) {
         final roles = GameEngine.buildRoles(entry.key);

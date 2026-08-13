@@ -32,6 +32,7 @@ void main() {
                   'targetId': 'player_cache_test_12345',
                   'deadline': 123456,
                   'requiredDodges': 1,
+                  'cardId': 'bang_ace_spade',
                 },
               ),
             }),
@@ -56,6 +57,7 @@ void main() {
     expect(hand, ['bang_ace_spade', 'beer_2_heart']);
     expect(pending?['id'], 'pending_1');
     expect(pending?['targetPlayerId'], 'player_cache_test_12345');
+    expect(pending?['cardId'], 'bang_ace_spade');
     expect(pendingList, hasLength(1));
   });
 
@@ -173,6 +175,9 @@ Map<String, Object?> _roomSnapshot({
   'turnNumber': 0,
   'bangUsedThisTurn': 0,
   'publicLog': const [],
+  'lastPlayedCardId': 'bang_ace_spade',
+  'lastActionActorId': 'p2',
+  'lastActionTargetId': 'player_cache_test_12345',
   'pendingBang': ?pendingBang,
   'roleDeck': List.generate(
     8,

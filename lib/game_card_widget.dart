@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'card_catalog.dart';
 import 'game_engine.dart';
+import 'ui/bang_ui.dart';
 
 String getRankLabel(CardRank rank) => switch (rank) {
   CardRank.ace => 'A',
@@ -34,7 +35,7 @@ Color getSuitColor(CardSuit suit) => switch (suit) {
 };
 
 /// Existing artwork plus responsive, code-rendered rank and suit markers.
-class GameCardWidget extends StatelessWidget {
+class GameCardWidget extends StatefulWidget {
   const GameCardWidget({
     required this.card,
     required this.width,
@@ -55,32 +56,56 @@ class GameCardWidget extends StatelessWidget {
   static const _aspectRatio = 2.5 / 3.5;
 
   @override
+  State<GameCardWidget> createState() => _GameCardWidgetState();
+}
+
+class _GameCardWidgetState extends State<GameCardWidget> {
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
-    final cardFace = height == null
+    final cardFace = widget.height == null
         ? AspectRatio(
-            aspectRatio: _aspectRatio,
-            child: _CardFace(card: card, isSelected: isSelected),
+            aspectRatio: GameCardWidget._aspectRatio,
+            child: _CardFace(card: widget.card, isSelected: widget.isSelected),
           )
         : SizedBox(
-            height: height,
-            child: _CardFace(card: card, isSelected: isSelected),
+            height: widget.height,
+            child: _CardFace(card: widget.card, isSelected: widget.isSelected),
           );
 
     return Semantics(
-      button: onTap != null,
-      enabled: isEnabled,
+      button: widget.onTap != null,
+      enabled: widget.isEnabled,
       label:
-          '${card.name}: ${getRankLabel(card.rank)} ${getSuitSymbol(card.suit)}',
-      child: SizedBox(
-        width: width,
-        child: Opacity(
-          opacity: isEnabled ? 1 : .48,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: isEnabled ? onTap : null,
-              borderRadius: BorderRadius.circular(width * .08),
-              child: cardFace,
+          '${widget.card.name}: ${getRankLabel(widget.card.rank)} ${getSuitSymbol(widget.card.suit)}',
+      child: AnimatedScale(
+        duration: BangMotion.resolve(context, BangMotion.instant),
+        curve: BangMotion.curve,
+        scale: _pressed && widget.isEnabled ? .96 : 1,
+        child: Listener(
+          onPointerDown: widget.isEnabled && widget.onTap != null
+              ? (_) => setState(() => _pressed = true)
+              : null,
+          onPointerUp: widget.isEnabled && widget.onTap != null
+              ? (_) => setState(() => _pressed = false)
+              : null,
+          onPointerCancel: widget.isEnabled && widget.onTap != null
+              ? (_) => setState(() => _pressed = false)
+              : null,
+          child: SizedBox(
+            width: widget.width,
+            child: AnimatedOpacity(
+              duration: BangMotion.resolve(context, BangMotion.fast),
+              opacity: widget.isEnabled ? 1 : .48,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: widget.isEnabled ? widget.onTap : null,
+                  borderRadius: BorderRadius.circular(widget.width * .08),
+                  child: cardFace,
+                ),
+              ),
             ),
           ),
         ),
@@ -107,7 +132,15 @@ class _CardFace extends StatelessWidget {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(radius),
-            child: Image.asset(card.imageAsset, fit: BoxFit.cover),
+            child: RepaintBoundary(
+              child: Image.asset(
+                card.imageAsset,
+                fit: BoxFit.cover,
+                filterQuality: FilterQuality.low,
+                cacheWidth: (cardWidth * MediaQuery.devicePixelRatioOf(context))
+                    .round(),
+              ),
+            ),
           ),
           Positioned(
             top: cardHeight * .045,

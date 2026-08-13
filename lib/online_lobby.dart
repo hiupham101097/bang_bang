@@ -10,12 +10,11 @@ import 'online_battle_screen.dart';
 import 'ui/bang_ui.dart';
 
 const ButtonStyle _lobbyButtonStyle = ButtonStyle(
-  minimumSize: WidgetStatePropertyAll(Size(0, 28)),
-  padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 7)),
-  visualDensity: VisualDensity(horizontal: -3, vertical: -3),
-  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  minimumSize: WidgetStatePropertyAll(Size(44, 40)),
+  padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 10)),
+  visualDensity: VisualDensity.compact,
   textStyle: WidgetStatePropertyAll(
-    TextStyle(fontSize: 9, fontWeight: FontWeight.w800),
+    TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: .4),
   ),
 );
 
@@ -198,45 +197,50 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: const Color(0xff160c08),
     appBar: AppBar(
       toolbarHeight: 46,
       title: const Text('PHÒNG ĐẤU'),
       actions: [_appBarControls()],
     ),
     floatingActionButton: _CreateRoomButton(onPressed: _create),
-    body: SafeArea(
-      top: false,
-      child: AnimatedBuilder(
-        animation: model,
-        builder: (context, _) => Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-          child: Column(
-            children: [
-              if (model.error != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    model.error!,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.redAccent),
+    body: BangScenicBackground(
+      overlay: .72,
+      child: SafeArea(
+        top: false,
+        child: AnimatedBuilder(
+          animation: model,
+          builder: (context, _) => Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+            child: Column(
+              children: [
+                if (model.error != null)
+                  BangPanel(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    child: Text(
+                      model.error!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Color(0xffff8a7f)),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: BangMotion.resolve(context, BangMotion.standard),
+                    switchInCurve: BangMotion.curve,
+                    switchOutCurve: Curves.easeOut,
+                    child: KeyedSubtree(
+                      key: ValueKey('${model.loading}-${model.rooms.length}'),
+                      child: _rooms(),
+                    ),
                   ),
                 ),
-              const SizedBox(height: 5),
-              Expanded(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 240),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  child: KeyedSubtree(
-                    key: ValueKey('${model.loading}-${model.rooms.length}'),
-                    child: _rooms(),
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -302,6 +306,7 @@ class _CreateRoomButtonState extends State<_CreateRoomButton>
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 180),
+    reverseDuration: const Duration(milliseconds: 90),
   );
 
   @override
@@ -314,7 +319,7 @@ class _CreateRoomButtonState extends State<_CreateRoomButton>
   Widget build(BuildContext context) => ScaleTransition(
     scale: Tween<double>(
       begin: 1,
-      end: .94,
+      end: .96,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut)),
     child: FloatingActionButton.extended(
       heroTag: 'create_room',
